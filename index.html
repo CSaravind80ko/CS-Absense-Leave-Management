@@ -345,6 +345,13 @@ label input,label select{ color:var(--ink); background:var(--surface); border:1p
 .prompt-chips{ gap:7px; margin-top:10px; display:flex; flex-wrap:wrap; }
 .prompt-chip{ color:var(--teal); background:var(--surface-2); border:1px solid var(--line); border-radius:14px; padding:6px 9px; font-size:10px; font-weight:700; }
 .ai-answer{ color:var(--ink); background:var(--badge-green-bg); border-radius:7px; margin-top:12px; padding:11px; font-size:11px; line-height:1.55; }
+.request-card{ border:1px solid var(--line); background:var(--surface-2); border-radius:8px; margin:12px 0; padding:13px; }
+.request-card-head{ justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; display:flex; }
+.request-card p{ color:var(--muted); font-size:11px; line-height:1.5; }
+.regularize-form{ gap:14px; margin-top:18px; display:flex; flex-direction:column; }
+.regularize-form .form-grid{ grid-template-columns:1fr 1fr; gap:11px; margin:0; }
+.regularize-form textarea{ color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:6px; min-height:82px; padding:9px; resize:vertical; font:inherit; font-weight:400; }
+.action-cell{ white-space:nowrap; }
 @media (max-width:980px){ .persona-metrics{ grid-template-columns:repeat(2,1fr); } }
 .toast{ color:#fff; z-index:40; background:var(--navy); border-radius:8px; align-items:center; gap:8px; padding:13px 16px; font-size:12px; font-weight:600; display:flex; position:fixed; bottom:24px; right:25px; box-shadow:0 8px 28px rgba(11,39,54,.3); opacity:0; pointer-events:none; transform:translateY(6px); transition:opacity .2s, transform .2s; }
 .toast.show{ opacity:1; transform:translateY(0); }
@@ -612,9 +619,16 @@ function expectedStart(emp,d){
   return d===6 ? CONFIG.satStart : CONFIG.weekdayStart;
 }
 function lopSoFar(cum){ return Math.floor(Math.max(0,cum-CONFIG.lateFreeMin)/CONFIG.lateBlockMin)*CONFIG.lopIncrement; }
-let lateLedger={}, compOffLedger={}, overrides={}, auditLog=[];
+let lateLedger={}, compOffLedger={}, overrides={}, auditLog=[], employeeRequests={};
 function logAudit(entity, field, oldV, newV, source, ruleRef, actor){
   auditLog.push({ ts:new Date().toISOString(), entity, field, old:oldV, new:newV, source, ruleRef, actor });
+}
+function employeeRequestKey(empId,date){ return empId+'|'+date; }
+function employeeRequestFor(empId,date){ return employeeRequests[employeeRequestKey(empId,date)] || null; }
+function employeeActionLabel(r,request){
+  if (request && request.state==='Pending') return 'View request';
+  if (request && request.state==='Withdrawn') return 'Resubmit';
+  return r.flagged ? 'Regularize' : 'Report issue';
 }
 function historicalAvgExit(empId){
   const list=[]; CYCLE_DATES.forEach(d=>{ const day=store[empId+'|'+d]; if(!day) return; const outs=day.punches.filter(p=>p.dir==='OUT'); if(outs.length) list.push(parseHM(outs[outs.length-1].time)); });
@@ -1253,17 +1267,18 @@ function renderRegister(){
       </div>
     </div>
     <div class="tablewrap" style="max-height:460px;overflow-y:auto;">
-      <table class="register"><thead><tr><th>Date</th><th>Employee</th><th>Persona</th><th>Status</th><th>Source</th><th>Confidence</th><th>Rationale</th></tr></thead>
-      <tbody>${shown.map(({emp,date,r})=>`
+      <table class="register"><thead><tr><th>Date</th><th>Employee</th><th>Persona</th><th>Status</th><th>Source</th><th>Confidence</th><th>Rationale</th>${CURRENT_ROLE==='Employee'?'<th>Action</th>':''}</tr></thead>
+      <tbody>${shown.map(({emp,date,r})=>{ const request=employeeRequestFor(emp.id,date); return `
         <tr class="clickable" data-emp="${emp.id}" data-date="${date}">
           <td class="num-col">${fmtDate(date)}</td>
           <td><b>${esc(emp.name)}</b><span class="subline">${esc(emp.dept)}</span></td>
           <td>${PERSONAS[emp.persona].label}</td>
-          <td><span class="badge ${statusChipClass(r.status)}">${r.status}</span></td>
+          <td><span class="badge ${statusChipClass(r.status)}">${r.status}</span>${request?`<span class="subline">${request.state} regularization</span>`:''}</td>
           <td>${esc(r.source||'—')}</td>
           <td class="num-col">${r.confidence!=null?(r.confidence*100).toFixed(0)+'%':'—'}</td>
           <td style="max-width:320px;">${esc((r.rationale&&r.rationale[0])||'')}</td>
-        </tr>`).join('')}</tbody>
+          ${CURRENT_ROLE==='Employee'?`<td class="action-cell"><button class="${r.flagged||request?'primary':'secondary'} small" data-employee-action="${emp.id}|${date}">${employeeActionLabel(r,request)}</button></td>`:''}
+        </tr>`; }).join('')}</tbody>
       </table>
     </div>
   </div>
@@ -1644,6 +1659,7 @@ function renderPeriods(){
 function empDayDetail(empId,date){
   const emp = EMP_BY_ID[empId]; const r = RESOLVED[empId][date];
   const root = document.getElementById('drawerRoot');
+  const request = employeeRequestFor(empId,date);
   const events = [];
   r.evidence.punches.forEach(p=>events.push({t:p.time, label:`${p.dir==='IN'?'Punch in':'Punch out'} — ${p.device}`}));
   r.evidence.mobile.forEach(m=>events.push({t:m.time, label:`Mobile login — ${m.zone}`}));
@@ -1662,14 +1678,15 @@ function empDayDetail(empId,date){
       </div>
       ${r.rationale && r.rationale.length ? `<div class="why"><div>${ic('<path d="M12 3v18M7 8h6.5a2.5 2.5 0 0 1 0 5H10a2.5 2.5 0 0 0 0 5H17" stroke="currentColor" stroke-width="1.7"/>').replace('width="15" height="15"','width="13" height="13"')}Why this status</div><p>${esc(r.rationale.join(' '))}</p></div>` : ''}
       ${r.recommendation?`<div class="rule-note"><div><b>Recommended action</b><p>${esc(r.recommendation)}</p></div></div>`:''}
+      ${CURRENT_ROLE==='Employee'&&request?`<div class="request-card"><div class="request-card-head"><b>${esc(request.requestId)}</b><span class="badge ${request.state==='Pending'?'amber':request.state==='Approved'?'green':'neutral'}">${request.state}</span></div><p>${esc(request.reason)} &middot; Requested status: ${esc(request.requestedStatus)}<br>Submitted ${new Date(request.submittedAt).toLocaleString()}</p></div>`:''}
       <div class="detail-grid">
         <div><span>Payable</span><b>${r.payable!=null?r.payable:'Held'}</b></div>
         <div><span>Exception type</span><b>${r.exceptionType||'—'}</b></div>
       </div>
       ${events.length? `<div class="timeline-detail"><h3>Timeline</h3>${events.map((e,i)=>`<p>${i===events.length-1?'<i class="final"></i>':'<i></i>'}<b>${e.t}</b><span>${esc(e.label)}</span></p>`).join('')}</div>` : '<p class="muted" style="font-size:11px;">No raw source events for this day.</p>'}
-      ${r.needsApproval && isOpen(r) ? `<div class="hstack" style="margin-top:6px;">
-        ${CURRENT_ROLE==='Employee'&&r.empId===ACTIVE_EMPLOYEE_ID?'<button class="primary full" id="drawerSubmit" style="flex:1;">Submit correction</button>':`<button class="approve full" id="drawerApprove" ${canApprove()?'':'disabled title="Requires manager or HR approval authority"'} style="flex:1;">Approve</button><button class="reject full" id="drawerReject" ${canApprove()?'':'disabled title="Requires manager or HR approval authority"'} style="flex:1;">Reject</button>`}
-      </div>` : ''}
+      ${CURRENT_ROLE==='Employee'&&empId===ACTIVE_EMPLOYEE_ID?`<div class="hstack" style="margin-top:6px;">
+        ${request&&request.state==='Pending'?'<button class="secondary full" id="drawerEditRequest" style="flex:1;">Edit request</button><button class="reject full" id="drawerWithdraw" style="flex:1;">Withdraw request</button>':`<button class="primary full" id="drawerRegularize" style="flex:1;">${request&&request.state==='Withdrawn'?'Resubmit regularization':r.flagged?'Regularize exception':'Report discrepancy'}</button>`}
+      </div>`:r.needsApproval&&isOpen(r)?`<div class="hstack" style="margin-top:6px;"><button class="approve full" id="drawerApprove" ${canApprove()?'':'disabled title="Requires manager or HR approval authority"'} style="flex:1;">Approve</button><button class="reject full" id="drawerReject" ${canApprove()?'':'disabled title="Requires manager or HR approval authority"'} style="flex:1;">Reject</button></div>`:''}
       <button class="secondary full" id="closeDetail2" style="margin-top:8px;">Close</button>
     </div>
   </div>`;
@@ -1677,8 +1694,15 @@ function empDayDetail(empId,date){
   document.getElementById('closeDetail').addEventListener('click', ()=> root.innerHTML='');
   document.getElementById('closeDetail2').addEventListener('click', ()=> root.innerHTML='');
   const da = document.getElementById('drawerApprove'), dr = document.getElementById('drawerReject');
-  const ds = document.getElementById('drawerSubmit');
-  if (ds) ds.addEventListener('click', ()=>{ root.innerHTML=''; showToast('Correction submitted to your reporting manager with source evidence.'); });
+  const regularize = document.getElementById('drawerRegularize'), editRequest = document.getElementById('drawerEditRequest'), withdraw = document.getElementById('drawerWithdraw');
+  if (regularize) regularize.addEventListener('click', ()=> openRegularization(empId,date));
+  if (editRequest) editRequest.addEventListener('click', ()=> openRegularization(empId,date));
+  if (withdraw) withdraw.addEventListener('click', ()=>{
+    if (!confirm('Withdraw this regularization request? The attendance exception will remain open.')) return;
+    const oldState=request.state; request.state='Withdrawn'; request.withdrawnAt=new Date().toISOString();
+    logAudit(request.requestId,'regularization.state',oldState,'Withdrawn','Employee self-service','E1','Employee');
+    root.innerHTML=''; showToast('Regularization request withdrawn. You can resubmit before cut-off.'); render();
+  });
   if (da) da.addEventListener('click', ()=>{
     if (!canApprove()) return;
     overrides[r.excId] = {state:'Approved', actor:CURRENT_ROLE+' (You)', ts:new Date().toISOString()};
@@ -1690,6 +1714,38 @@ function empDayDetail(empId,date){
     overrides[r.excId] = {state:'Rejected', actor:CURRENT_ROLE+' (You)', ts:new Date().toISOString()};
     logAudit(r.excId, 'approval.state', approvalStateOf(r), 'Rejected', 'UI action', r.approvalType, CURRENT_ROLE);
     root.innerHTML=''; showToast('Rejected — case remains held.'); render();
+  });
+}
+
+function openRegularization(empId,date){
+  if (CURRENT_ROLE!=='Employee' || empId!==ACTIVE_EMPLOYEE_ID) return;
+  const emp=EMP_BY_ID[empId], r=RESOLVED[empId][date], existing=employeeRequestFor(empId,date);
+  const root=document.getElementById('drawerRoot');
+  const punches=r.evidence.punches||[], inPunch=punches.find(p=>p.dir==='IN'), outPunch=punches.find(p=>p.dir==='OUT');
+  root.innerHTML=`<div class="overlay" id="ov"><div class="detail-panel">
+    <div class="detail-head"><div><small>Attendance regularization</small><h2>${esc(emp.name)}</h2><p>${fmtDate(date)} 2026 &middot; ${esc(r.exceptionType||'Attendance discrepancy')}</p></div><button class="close-x" id="closeRegularize">&times;</button></div>
+    <div class="rule-note" style="margin-top:18px;"><div><b>Evidence-based request</b><p>Provide the actual attendance details. Your reporting manager will receive the request with the original source evidence and a complete audit trail.</p></div></div>
+    <form class="regularize-form" id="regularizeForm">
+      <label>Reason for request<select id="regReason" required><option value="">Select a reason</option>${['Missed punch-in','Missed punch-out','Biometric device issue','Official duty / client visit','Shift or roster mismatch','Other attendance discrepancy'].map(x=>`<option ${existing&&existing.reason===x?'selected':''}>${x}</option>`).join('')}</select></label>
+      <label>Requested attendance status<select id="regStatus" required>${['Present','Half day','On Duty','Leave'].map(x=>`<option ${existing&&existing.requestedStatus===x?'selected':''}>${x}</option>`).join('')}</select></label>
+      <div class="form-grid"><label>Actual punch-in<input id="regIn" type="time" value="${existing?existing.inTime:(inPunch?inPunch.time:'')}"></label><label>Actual punch-out<input id="regOut" type="time" value="${existing?existing.outTime:(outPunch?outPunch.time:'')}"></label></div>
+      <label>Explanation<textarea id="regNote" maxlength="500" required placeholder="Explain what happened and provide details your manager can verify.">${existing?esc(existing.note):''}</textarea></label>
+      <div class="request-card"><div class="request-card-head"><b>Supporting evidence</b><span class="badge green">${punches.length} source event${punches.length===1?'':'s'} attached</span></div><p>Biometric, mobile, OD and leave signals already available for this day will be attached automatically. Additional document upload is optional in the production workflow.</p></div>
+      <div class="wizard-actions"><button type="button" class="secondary" id="cancelRegularize">Cancel</button><button type="submit" class="primary">${existing&&existing.state==='Pending'?'Save changes':'Submit for approval'}</button></div>
+    </form>
+  </div></div>`;
+  const close=()=>empDayDetail(empId,date);
+  document.getElementById('closeRegularize').onclick=close;
+  document.getElementById('cancelRegularize').onclick=close;
+  document.getElementById('ov').addEventListener('click',e=>{if(e.target.id==='ov')close();});
+  document.getElementById('regularizeForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    const reason=document.getElementById('regReason').value, requestedStatus=document.getElementById('regStatus').value, note=document.getElementById('regNote').value.trim();
+    if (!reason || !note){ showToast('Add a reason and explanation before submitting.'); return; }
+    const key=employeeRequestKey(empId,date), previous=employeeRequests[key];
+    employeeRequests[key]={requestId:previous?previous.requestId:'REG-'+date.replaceAll('-','')+'-'+empId,empId,date,state:'Pending',reason,requestedStatus,inTime:document.getElementById('regIn').value,outTime:document.getElementById('regOut').value,note,submittedAt:new Date().toISOString()};
+    logAudit(employeeRequests[key].requestId,'regularization.state',previous?previous.state:'Draft','Pending manager approval','Employee self-service','E1','Employee');
+    root.innerHTML=''; showToast(previous&&previous.state==='Pending'?'Regularization request updated.':'Regularization submitted to your reporting manager.'); render();
   });
 }
 
@@ -1742,6 +1798,7 @@ function wire(){
     if (sS) sS.addEventListener('change', ()=>{ REG_FILTER.status=sS.value; render(); });
     if (qI) qI.addEventListener('input', ()=>{ REG_FILTER.q=qI.value; render(); qI.focus(); qI.selectionStart=qI.selectionEnd=qI.value.length; });
     document.querySelectorAll('tr[data-emp]').forEach(tr=> tr.addEventListener('click', ()=> empDayDetail(tr.dataset.emp, tr.dataset.date)));
+    document.querySelectorAll('[data-employee-action]').forEach(button=>button.addEventListener('click',event=>{ event.stopPropagation(); const [empId,date]=button.dataset.employeeAction.split('|'); const request=employeeRequestFor(empId,date); if(request&&request.state==='Pending') empDayDetail(empId,date); else openRegularization(empId,date); }));
   }
   if (ACTIVE_PAGE==='exceptions'){
     const svS=document.getElementById('fSev'), tyS=document.getElementById('fType'), stS=document.getElementById('fState'), dpS=document.getElementById('fDept');
