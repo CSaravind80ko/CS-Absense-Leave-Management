@@ -330,6 +330,22 @@ label input,label select{ color:var(--ink); background:var(--surface); border:1p
 .hstack{ display:flex; gap:10px; align-items:center; }
 .divider{ height:1px; background:var(--line); margin:4px 0; }
 .report-card{ border:1px solid var(--line); background:var(--surface); border-radius:9px; padding:16px 18px; box-shadow:var(--shadow); }
+.persona-hero{ background:linear-gradient(120deg,var(--navy),#17616b); color:#fff; border-radius:11px; justify-content:space-between; align-items:center; gap:18px; margin-bottom:15px; padding:23px 25px; display:flex; flex-wrap:wrap; }
+.persona-hero span{ color:#8fe6d8; letter-spacing:.7px; text-transform:uppercase; font-size:9px; font-weight:800; }
+.persona-hero h2{ color:#fff; margin:6px 0; font-size:21px; }
+.persona-hero p{ color:#d0e6e6; font-size:12px; }
+.persona-metrics{ grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:15px; display:grid; }
+.persona-metrics .panel{ padding:15px; }
+.persona-metrics b{ font:800 23px var(--display); display:block; }
+.persona-metrics span{ margin-top:4px; font-size:11px; font-weight:700; display:block; }
+.persona-metrics small{ color:var(--muted); margin-top:3px; font-size:10px; display:block; }
+.ai-prompt{ border:1px solid var(--line); background:var(--surface); border-radius:9px; margin-bottom:15px; padding:18px; box-shadow:var(--shadow); }
+.ai-prompt-row{ gap:8px; margin-top:12px; display:flex; }
+.ai-prompt-row input{ flex:1; min-width:0; }
+.prompt-chips{ gap:7px; margin-top:10px; display:flex; flex-wrap:wrap; }
+.prompt-chip{ color:var(--teal); background:var(--surface-2); border:1px solid var(--line); border-radius:14px; padding:6px 9px; font-size:10px; font-weight:700; }
+.ai-answer{ color:var(--ink); background:var(--badge-green-bg); border-radius:7px; margin-top:12px; padding:11px; font-size:11px; line-height:1.55; }
+@media (max-width:980px){ .persona-metrics{ grid-template-columns:repeat(2,1fr); } }
 .toast{ color:#fff; z-index:40; background:var(--navy); border-radius:8px; align-items:center; gap:8px; padding:13px 16px; font-size:12px; font-weight:600; display:flex; position:fixed; bottom:24px; right:25px; box-shadow:0 8px 28px rgba(11,39,54,.3); opacity:0; pointer-events:none; transform:translateY(6px); transition:opacity .2s, transform .2s; }
 .toast.show{ opacity:1; transform:translateY(0); }
 footer.foot{ color:#8b9aa1; font-size:11px; padding:14px 34px 30px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
@@ -813,19 +829,40 @@ function buildRegister(){
 }
 
 /* ============================== RBAC ============================== */
-const ROLES = ['Admin','HR Manager','Approver','Auditor','Read-only'];
+const ROLES = ['Employee','Reporting Manager','HR Operations Lead','HR Manager'];
 const ROLE_NOTE = {
-  Admin:'Full access — rules, connectors, approvals, audit export, reports.',
-  'HR Manager':'Daily reconciliation user — register, exceptions, reports. No rule edits.',
-  Approver:'Can decide pending approval cases. Cannot edit rules or connectors.',
-  Auditor:'Read-only + audit/report export. Cannot approve or change configuration.',
-  'Read-only':'View everything, change nothing.'
+  Employee:'Self-service access to personal attendance, corrections and private AI insights.',
+  'Reporting Manager':'Team-scoped attendance visibility and first-line approval authority.',
+  'HR Operations Lead':'Operational access to imports, reconciliation, exceptions and payroll readiness.',
+  'HR Manager':'Enterprise oversight with policy, connector, reporting and governance access.'
 };
-let CURRENT_ROLE = 'Admin';
-function canApprove(){ return CURRENT_ROLE==='Admin' || CURRENT_ROLE==='Approver'; }
-function canEditConfig(){ return CURRENT_ROLE==='Admin'; }
-function canManageConnectors(){ return CURRENT_ROLE==='Admin'; }
-function canExport(){ return CURRENT_ROLE==='Admin' || CURRENT_ROLE==='Auditor'; }
+const ACTIVE_EMPLOYEE_ID = 'E01';
+const MANAGER_TEAM_IDS = new Set(['E01','E02','E03','E04','E05','E06','E07','E08']);
+const ROLE_ACCESS = {
+  Employee:['dashboard','insights','register'],
+  'Reporting Manager':['dashboard','insights','register','exceptions','approvals'],
+  'HR Operations Lead':['dashboard','insights','periods','import','register','exceptions','approvals','reports','audit'],
+  'HR Manager':['dashboard','insights','periods','import','register','exceptions','approvals','rules','integrations','reports','audit']
+};
+let CURRENT_ROLE = 'Employee';
+function canApprove(){ return ['Reporting Manager','HR Operations Lead','HR Manager'].includes(CURRENT_ROLE); }
+function canEditConfig(){ return CURRENT_ROLE==='HR Manager'; }
+function canManageConnectors(){ return CURRENT_ROLE==='HR Manager'; }
+function canExport(){ return CURRENT_ROLE==='HR Operations Lead' || CURRENT_ROLE==='HR Manager'; }
+function canAccessPage(id){ return ROLE_ACCESS[CURRENT_ROLE].includes(id); }
+function visibleEmployees(){
+  if (CURRENT_ROLE==='Employee') return EMPLOYEES.filter(e=>e.id===ACTIVE_EMPLOYEE_ID);
+  if (CURRENT_ROLE==='Reporting Manager') return EMPLOYEES.filter(e=>MANAGER_TEAM_IDS.has(e.id));
+  return EMPLOYEES;
+}
+function visibleExceptions(){
+  const ids = new Set(visibleEmployees().map(e=>e.id));
+  return allExceptions().filter(e=>ids.has(e.empId));
+}
+function visibleApprovalCases(){
+  const ids = new Set(visibleEmployees().map(e=>e.id));
+  return approvalCases().filter(e=>ids.has(e.empId));
+}
 
 /* seed a few narrative system activity entries (non-interactive, flavor) */
 const SEED_ACTIVITY = [
@@ -869,8 +906,8 @@ const NAV = [
   ]}
 ];
 const PAGE_META = {
-  dashboard:{ title:'Dashboard', sub:'Operational overview for the active payroll period.' },
-  insights:{ title:'AI Insights', sub:'Organisational intelligence surfaced from this cycle’s attendance data (F1).' },
+  dashboard:{ title:'Dashboard', sub:'Role-relevant attendance priorities for the active payroll period.' },
+  insights:{ title:'AI Insights', sub:'Privacy-scoped attendance intelligence and guided questions for your role.' },
   periods:{ title:'Processing Periods', sub:'Manage attendance cycles, cut-offs and payroll readiness.' },
   import:{ title:'Data Import Centre', sub:'Bring source data into the active processing period and validate before processing (§8).' },
   register:{ title:'Attendance Register', sub:'The Employee-Day canonical record and the payable-days rollup that feeds payroll (§7.1, E3).' },
@@ -925,6 +962,83 @@ function computeDashboardStats(){
 }
 
 function renderDashboard(){
+  if (CURRENT_ROLE==='Employee') return renderEmployeeDashboard();
+  if (CURRENT_ROLE==='Reporting Manager') return renderManagerDashboard();
+  if (CURRENT_ROLE==='HR Operations Lead') return renderOperationsDashboard();
+  return renderHRManagerDashboard();
+}
+
+function weekLabel(date){
+  const day=Number(date.slice(-2));
+  return day<=7?'Week 1':day<=14?'Week 2':day<=21?'Week 3':day<=28?'Week 4':'Week 5';
+}
+function roleHero(kicker,title,copy,action){
+  return `<div class="persona-hero"><div><span>${kicker}</span><h2>${title}</h2><p>${copy}</p></div>${action||''}</div>`;
+}
+function renderEmployeeDashboard(){
+  const emp=EMP_BY_ID[ACTIVE_EMPLOYEE_ID], days=CYCLE_DATES.map(date=>RESOLVED[emp.id][date]);
+  const working=days.filter(r=>!['Holiday','WeekOff'].includes(r.status));
+  const missing=days.filter(r=>['MissingPunchEscalated','GenuineAbsence'].includes(r.exceptionType));
+  const open=missing.filter(isOpen);
+  const approved=days.filter(r=>r.status==='Present' && (r.source||'').includes('Reconstructed'));
+  const reg=buildRegister().find(r=>r.emp.id===emp.id);
+  const weekly={}; missing.forEach(r=>weekly[weekLabel(r.date)]=(weekly[weekLabel(r.date)]||0)+1);
+  return `${roleHero('Employee self-service',`Good morning, ${emp.name.split(' ')[0]}`,`Your attendance is private to you. Review missing punches and resolve actions before the 26 August cut-off.`,`<button class="primary" data-goto="register">View my attendance</button>`)}
+  <div class="persona-metrics">
+    <div class="panel"><b>${working.filter(r=>r.status==='Present').length}</b><span>Present days</span><small>Current cycle</small></div>
+    <div class="panel"><b class="${open.length?'critical-text':''}">${open.length}</b><span>Missing punches</span><small>${open.length?'Action required':'No action required'}</small></div>
+    <div class="panel"><b>${approved.length}</b><span>Approved corrections</span><small>With complete audit trail</small></div>
+    <div class="panel"><b>${reg.payableDays}</b><span>Estimated payable days</span><small>Subject to payroll closure</small></div>
+  </div>
+  <div class="two-panel">
+    <div class="panel"><div class="panel-head"><div><h2>My missing-punch actions</h2><p>Only your records are shown</p></div><span class="badge ${open.length?'amber':'green'}">${open.length} open</span></div>
+      ${missing.slice(0,5).map(r=>`<div class="source-row"><div><b>${fmtDate(r.date)} &middot; ${r.exceptionType==='GenuineAbsence'?'No attendance signal':'Missing punch'}</b><small>${esc(r.recommendation||'Correction reviewed')}</small></div>${approvalStateChip(approvalStateOf(r))}</div>`).join('')||'<p class="muted">No missing punches this cycle.</p>'}
+    </div>
+    <div class="panel"><div class="panel-head"><div><h2>Missing-punch trend</h2><p>Use this pattern for self-evaluation</p></div></div>
+      <div class="bars">${['Week 1','Week 2','Week 3','Week 4','Week 5'].map(w=>`<div class="bar-row"><span>${w}</span><div><i style="width:${Math.min(100,(weekly[w]||0)*35)}%;"></i></div><b>${weekly[w]||0}</b></div>`).join('')}</div>
+      <div class="rule-note" style="margin-top:14px;margin-bottom:0;"><div><b>Personal insight</b><p>${missing.length?'Most missing-punch activity is concentrated in '+Object.entries(weekly).sort((a,b)=>b[1]-a[1])[0][0]+'. Set an end-of-day reminder to reduce repeat corrections.':'You have no missing-punch pattern this cycle. Keep your current check-out routine.'}</p></div></div>
+    </div>
+  </div>`;
+}
+function renderManagerDashboard(){
+  const team=visibleEmployees(), ids=new Set(team.map(e=>e.id)), cases=visibleApprovalCases();
+  const open=cases.filter(r=>['Pending','Escalated'].includes(approvalStateOf(r)));
+  const ready=buildRegister().filter(r=>ids.has(r.emp.id)&&r.reconciled).length;
+  return `${roleHero('Reporting manager workspace','Team decisions need your attention',`Your view is limited to ${team.length} direct reports. Decide attendance corrections using source evidence, not raw organisation-wide data.`,`<button class="primary" data-goto="approvals">Review team approvals</button>`)}
+  <div class="persona-metrics">
+    <div class="panel"><b>${team.length}</b><span>Direct reports</span><small>Your reporting scope</small></div>
+    <div class="panel"><b class="${open.length?'critical-text':''}">${open.length}</b><span>Pending decisions</span><small>${open.filter(r=>approvalStateOf(r)==='Escalated').length} escalated</small></div>
+    <div class="panel"><b>${ready}</b><span>Payroll-ready employees</span><small>of ${team.length} team members</small></div>
+    <div class="panel"><b>${Math.max(0,team.length-ready)}</b><span>Need follow-up</span><small>Before attendance cut-off</small></div>
+  </div>
+  <div class="dashboard-grid">
+    <div class="panel"><div class="panel-head"><div><h2>Priority approval queue</h2><p>Evidence-backed team requests</p></div></div>${open.slice(0,5).map(r=>`<div class="source-row"><div><b>${esc(EMP_BY_ID[r.empId].name)} &middot; ${r.exceptionType}</b><small>${fmtDate(r.date)} &middot; ${esc(r.recommendation||'Review evidence')}</small></div><button class="secondary small" data-goto="approvals">Review</button></div>`).join('')||'<p class="muted">No team decisions are waiting.</p>'}</div>
+    <div class="panel"><div class="panel-head"><div><h2>Team attendance health</h2><p>Manager-level indicators only</p></div></div>
+      <div class="progress-list"><p><span><i class="green-dot"></i>Payroll ready</span><b>${ready}</b></p><p><span><i class="amber-dot"></i>Pending correction</span><b>${open.length}</b></p><p><span><i class="red-dot"></i>Escalated</span><b>${open.filter(r=>approvalStateOf(r)==='Escalated').length}</b></p></div>
+      <div class="rule-note" style="margin-top:16px;margin-bottom:0;"><div><b>Best-practice guardrail</b><p>Managers see only direct-report attendance and the minimum evidence required to make a decision.</p></div></div>
+    </div>
+  </div>`;
+}
+function renderOperationsDashboard(){
+  const s=computeDashboardStats(), pending=visibleApprovalCases().filter(r=>['Pending','Escalated'].includes(approvalStateOf(r))).length;
+  const readyPct=Math.round(100*s.readyCount/EMPLOYEES.length);
+  return `${roleHero('HR operations workspace','Keep the attendance cycle moving',`Focus on data quality, exception ageing and payroll readiness. Policy and connector administration remain with the HR Manager.`,`<button class="primary" data-goto="exceptions">Open workbench</button>`)}
+  <div class="persona-metrics">
+    <div class="panel"><b>${readyPct}%</b><span>Payroll readiness</span><small>${s.readyCount} of ${EMPLOYEES.length} employees</small></div>
+    <div class="panel"><b class="${s.openExc.length?'critical-text':''}">${s.openExc.length}</b><span>Open exceptions</span><small>Across the active cycle</small></div>
+    <div class="panel"><b>${pending}</b><span>Pending approvals</span><small>Manager and HR queues</small></div>
+    <div class="panel"><b>${(100*s.touchless/s.workingDays).toFixed(1)}%</b><span>Touchless processing</span><small>Employee-days automated</small></div>
+  </div>
+  <div class="dashboard-grid">
+    <div class="panel"><div class="panel-head"><div><h2>Operational runbook</h2><p>Recommended sequence for payroll closure</p></div></div>
+      ${[['Validate source imports','import','Complete','green'],['Resolve high-severity exceptions','exceptions',s.openExc.filter(e=>e.severity==='High').length+' open','red'],['Clear approval backlog','approvals',pending+' pending','amber'],['Generate payroll register','reports',readyPct+'% ready','blue']].map(([label,page,state,tone],i)=>`<div class="source-row"><span class="badge ${tone}">${i+1}</span><div><b>${label}</b><small>${state}</small></div><button class="secondary small" data-goto="${page}">Open</button></div>`).join('')}
+    </div>
+    <div class="panel"><div class="panel-head"><div><h2>Controls requiring attention</h2><p>Prioritised by payroll impact</p></div></div>
+      ${s.openExc.slice(0,5).map(r=>`<div class="source-row"><div><b>${esc(EMP_BY_ID[r.empId].name)} &middot; ${r.exceptionType}</b><small>${r.severity} severity &middot; ${fmtDate(r.date)}</small></div><span class="badge ${sevChipClass(r.severity)}">${r.severity}</span></div>`).join('')}
+    </div>
+  </div>`;
+}
+function renderHRManagerDashboard(){
   const s = computeDashboardStats();
   const touchlessPct = (100*s.touchless/s.workingDays).toFixed(1);
   const readyPct = Math.round(100*s.readyCount/EMPLOYEES.length);
@@ -1021,6 +1135,7 @@ function pieChartHTML(entries){
 
 /* ============================== insights ============================== */
 function renderInsights(){
+  if (CURRENT_ROLE!=='HR Manager') return renderScopedInsights();
   const misuse = EMPLOYEES.filter(e=>{ let c=0; CYCLE_DATES.forEach(d=>{ if(RESOLVED[e.id][d].exceptionType==='GPSViolation') c++; }); return c>=3; });
   const lateRisk = EMPLOYEES.filter(e=> (lateLedger[e.id]||{}).lopDays > 0);
   const excByType = {}; allExceptions().forEach(e=>{ excByType[e.exceptionType]=(excByType[e.exceptionType]||0)+1; });
@@ -1064,11 +1179,45 @@ function renderInsights(){
   </div>`;
 }
 
+function renderScopedInsights(){
+  const scope=visibleEmployees(), ids=new Set(scope.map(e=>e.id));
+  const exc=allExceptions().filter(e=>ids.has(e.empId));
+  const open=exc.filter(isOpen);
+  const roleCopy={
+    Employee:{title:'Ask about your attendance',copy:'Answers use only your own attendance, corrections and approved policy context.',questions:['Why do I have a missing punch?','How can I improve my attendance trend?','Will any current issue affect my payroll?']},
+    'Reporting Manager':{title:'Ask about your team',copy:'Answers are limited to direct reports and avoid exposing unrelated employee data.',questions:['Which team approvals are most urgent?','Who may miss payroll readiness?','What attendance pattern needs a manager check-in?']},
+    'HR Operations Lead':{title:'Ask about attendance operations',copy:'Answers focus on cycle execution, exception ageing, data quality and payroll readiness.',questions:['What should operations resolve first?','Which exceptions are ageing beyond SLA?','What blocks payroll closure?']}
+  }[CURRENT_ROLE];
+  const missing=exc.filter(e=>['MissingPunchEscalated','GenuineAbsence'].includes(e.exceptionType)).length;
+  const payrollReady=buildRegister().filter(r=>ids.has(r.emp.id)&&r.reconciled).length;
+  return `${roleHero(`${CURRENT_ROLE} AI workspace`,roleCopy.title,roleCopy.copy,'')}
+  <div class="ai-prompt"><h2>Ask attendance AI</h2><p class="muted">Your prompt is automatically constrained to your authorised data scope.</p>
+    <div class="ai-prompt-row"><input id="aiPrompt" aria-label="Ask attendance AI" placeholder="${roleCopy.questions[0]}"><button class="primary" id="btnAskAI">Ask AI</button></div>
+    <div class="prompt-chips">${roleCopy.questions.map(q=>`<button class="prompt-chip" data-prompt="${q}">${q}</button>`).join('')}</div><div id="aiAnswer"></div>
+  </div>
+  <div class="insight-stats">
+    <div class="panel"><b>${CURRENT_ROLE==='Employee'?missing:open.length}</b><span>${CURRENT_ROLE==='Employee'?'Personal missing-punch events':'Open items in your scope'}</span></div>
+    <div class="panel"><b>${payrollReady}</b><span>${CURRENT_ROLE==='Employee'?'Payroll-ready employee record':'Payroll-ready people in scope'}</span></div>
+    <div class="panel"><b>${scope.length}</b><span>${CURRENT_ROLE==='Employee'?'Authorised profile':'People in authorised scope'}</span></div>
+  </div>
+  <div class="two-panel">
+    <div class="panel"><div class="panel-head"><div><h2>Role-specific briefing</h2><p>Actionable, explainable and privacy-safe</p></div></div>
+      <div class="ai-explanation">
+        <div>${ic('<path d="M4 12l5 5L20 6" stroke="currentColor" stroke-width="2"/>')}<p><b>Priority:</b> ${CURRENT_ROLE==='Employee'?(open.length?'Resolve '+open.length+' personal attendance item before cut-off.':'Your attendance has no open action.') : open.length+' scoped exceptions need attention before payroll close.'}</p></div>
+        <div>${ic('<path d="M4 4v16h16" stroke="currentColor" stroke-width="1.8"/><path d="M7 15l4-4 3 3 5-6" stroke="currentColor" stroke-width="1.8"/>')}<p><b>Pattern:</b> ${missing} missing-punch event${missing===1?'':'s'} detected in the authorised scope this cycle.</p></div>
+      </div>
+    </div>
+    <div class="panel"><div class="panel-head"><div><h2>AI guardrails</h2><p>Industry-standard responsible access</p></div></div>
+      <div class="stack"><div class="hstack"><span>Least-privilege data scope</span><span class="badge green" style="margin-left:auto;">Enforced</span></div><div class="hstack"><span>Source evidence and rationale</span><span class="badge green" style="margin-left:auto;">Required</span></div><div class="hstack"><span>Human approval for pay impact</span><span class="badge green" style="margin-left:auto;">Required</span></div></div>
+    </div>
+  </div>`;
+}
+
 /* ============================== attendance register ============================== */
 function renderRegister(){
   const f = REG_FILTER;
   const rows = [];
-  EMPLOYEES.forEach(emp=>{
+  visibleEmployees().forEach(emp=>{
     if (f.q && !emp.name.toLowerCase().includes(f.q.toLowerCase())) return;
     CYCLE_DATES.forEach(date=>{
       const r = RESOLVED[emp.id][date];
@@ -1077,7 +1226,8 @@ function renderRegister(){
     });
   });
   const shown = rows.slice(0,300);
-  const reg = buildRegister();
+  const visibleIds = new Set(visibleEmployees().map(e=>e.id));
+  const reg = buildRegister().filter(r=>visibleIds.has(r.emp.id));
   const reconciledCount = reg.filter(r=>r.reconciled).length;
   const totalPayable = reg.reduce((s,r)=>s+r.payableDays,0);
   const totalLop = reg.reduce((s,r)=>s+r.lopDays,0);
@@ -1136,13 +1286,13 @@ function renderRegister(){
 /* ============================== exceptions ============================== */
 function renderExceptions(){
   const f = EXC_FILTER;
-  let exc = allExceptions();
+  let exc = visibleExceptions();
   if (f.severity!=='all') exc = exc.filter(e=>e.severity===f.severity);
   if (f.type!=='all') exc = exc.filter(e=>e.exceptionType===f.type);
   if (f.state!=='all') exc = exc.filter(e=>approvalStateOf(e)===f.state);
   if (f.dept!=='all') exc = exc.filter(e=>EMP_BY_ID[e.empId].dept===f.dept);
-  const types = [...new Set(allExceptions().map(e=>e.exceptionType))];
-  const all = allExceptions();
+  const types = [...new Set(visibleExceptions().map(e=>e.exceptionType))];
+  const all = visibleExceptions();
   const high = all.filter(e=>e.severity==='High').length, med = all.filter(e=>e.severity==='Medium').length, low = all.filter(e=>e.severity==='Low').length;
   const open = all.filter(isOpen).length;
 
@@ -1160,7 +1310,7 @@ function renderExceptions(){
         <select id="fSev"><option value="all">All severities</option>${['High','Medium','Low'].map(s=>`<option value="${s}" ${f.severity===s?'selected':''}>${s}</option>`).join('')}</select>
         <select id="fType"><option value="all">All types</option>${types.map(t=>`<option value="${t}" ${f.type===t?'selected':''}>${t}</option>`).join('')}</select>
         <select id="fState"><option value="all">All status</option>${['Pending','Escalated','Approved','Rejected','Confirmed'].map(s=>`<option value="${s}" ${f.state===s?'selected':''}>${s}</option>`).join('')}</select>
-        <select id="fDept"><option value="all">All departments</option>${DEPARTMENTS.map(d=>`<option value="${d}" ${f.dept===d?'selected':''}>${d}</option>`).join('')}</select>
+        <select id="fDept"><option value="all">All departments</option>${[...new Set(visibleEmployees().map(e=>e.dept))].sort().map(d=>`<option value="${d}" ${f.dept===d?'selected':''}>${d}</option>`).join('')}</select>
         <span class="badge neutral" style="margin-left:auto;">${exc.length} matching</span>
       </div>
     </div>
@@ -1182,7 +1332,7 @@ function renderExceptions(){
 
 /* ============================== approvals ============================== */
 function renderApprovals(){
-  const cases = approvalCases();
+  const cases = visibleApprovalCases();
   const counts = {
     Pending: cases.filter(r=>approvalStateOf(r)==='Pending').length,
     Escalated: cases.filter(r=>approvalStateOf(r)==='Escalated').length,
@@ -1204,12 +1354,12 @@ function renderApprovals(){
       <td class="num-col">${fmtDate(r.date)}</td><td><b>${esc(emp.name)}</b><span class="subline">${PERSONAS[emp.persona].label}</span></td>
       <td><span class="badge neutral">${r.exceptionType}</span></td><td>${kind}</td>
       <td style="max-width:260px;">${esc(r.recommendation||'')}</td><td>${approvalStateChip(state)}</td>
-      <td>${actionable? `<div class="table-actions"><button class="approve" data-approve="${r.empId}|${r.date}" ${allowed?'':'disabled title="Requires Approver or Admin role"'}>Approve</button><button class="reject" data-reject="${r.empId}|${r.date}" ${allowed?'':'disabled title="Requires Approver or Admin role"'}>Reject</button></div>`:''}</td>
+      <td>${actionable? `<div class="table-actions"><button class="approve" data-approve="${r.empId}|${r.date}" ${allowed?'':'disabled title="Requires manager or HR approval authority"'}>Approve</button><button class="reject" data-reject="${r.empId}|${r.date}" ${allowed?'':'disabled title="Requires manager or HR approval authority"'}>Reject</button></div>`:''}</td>
     </tr>`;
   }
 
   return `
-  ${!allowed?`<div class="rule-note"><div><b>Viewing as ${CURRENT_ROLE}.</b><p>${ROLE_NOTE[CURRENT_ROLE]} Switch to Approver or Admin in the sidebar to act on these cases.</p></div></div>`:''}
+  ${!allowed?`<div class="rule-note"><div><b>Viewing as ${CURRENT_ROLE}.</b><p>${ROLE_NOTE[CURRENT_ROLE]}</p></div></div>`:''}
   <div class="tabs">
     ${['Pending','Escalated','Approved','Rejected','All'].map(t=>`<button type="button" class="${t===APR_TAB?'selected':''}" data-aprtab="${t}">${t}${counts[t]?` (${counts[t]})`:''}</button>`).join('')}
   </div>
@@ -1217,8 +1367,8 @@ function renderApprovals(){
     ${actionableTab && selectedHere.length>0 ? `<div class="hstack" style="padding:11px 17px;background:var(--badge-blue-bg);border-bottom:1px solid var(--line);">
       <b style="font-size:12px;">${selectedHere.length} selected</b>
       <div class="hstack" style="margin-left:auto;">
-        <button class="approve" id="bulkApprove" ${allowed?'':'disabled title="Requires Approver or Admin role"'}>Approve selected</button>
-        <button class="reject" id="bulkReject" ${allowed?'':'disabled title="Requires Approver or Admin role"'}>Reject selected</button>
+        <button class="approve" id="bulkApprove" ${allowed?'':'disabled title="Requires manager or HR approval authority"'}>Approve selected</button>
+        <button class="reject" id="bulkReject" ${allowed?'':'disabled title="Requires manager or HR approval authority"'}>Reject selected</button>
       </div>
     </div>` : ''}
     <div class="tablewrap"><table><thead><tr>
@@ -1254,7 +1404,7 @@ const BR_CATALOGUE = [
 function renderRules(){
   const c = CONFIG; const canEdit = canEditConfig();
   return `
-  <div class="rule-note"><div>${ic('<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>')}<b>Configuration over code.</b><p>Rules, thresholds, personas and precedence are tenant-configurable — a new policy takes effect on recompute, with no code deployment (design principle, NFR-7).${canEdit?'':' Viewing as '+CURRENT_ROLE+' — editing requires the Admin role.'}</p></div></div>
+  <div class="rule-note"><div>${ic('<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>')}<b>Configuration over code.</b><p>Rules, thresholds, personas and precedence are tenant-configurable — a new policy takes effect on recompute, with no code deployment (design principle, NFR-7).${canEdit?'':' Viewing as '+CURRENT_ROLE+' — editing requires the HR Manager role.'}</p></div></div>
 
   <div class="two-panel">
     <div class="panel">
@@ -1304,7 +1454,7 @@ function renderIntegrations(){
         <span>Idempotency</span><b>By punch_id</b>
         <span>Health</span><b><span class="badge green">Synchronised 6m ago</span></b>
       </div>
-      <div><button class="secondary small" id="btnTestConn" ${canEdit?'':'disabled title="Requires Admin role"'}>Run health check</button><button class="secondary small" ${canEdit?'':'disabled title="Requires Admin role"'}>Rotate credentials</button></div>
+      <div><button class="secondary small" id="btnTestConn" ${canEdit?'':'disabled title="Requires HR Manager role"'}>Run health check</button><button class="secondary small" ${canEdit?'':'disabled title="Requires HR Manager role"'}>Rotate credentials</button></div>
     </div>
     <div class="panel integration-card">
       <div><div class="large-source">gH</div><div><h2>greytHR</h2></div></div>
@@ -1316,7 +1466,7 @@ function renderIntegrations(){
         <span>Write-back</span><b>Approvals, regularisation, attendance</b>
         <span>Health</span><b><span class="badge green">Synchronised 2m ago</span></b>
       </div>
-      <div><button class="secondary small" ${canEdit?'':'disabled title="Requires Admin role"'}>Run health check</button><button class="secondary small" ${canEdit?'':'disabled title="Requires Admin role"'}>Rotate credentials</button></div>
+      <div><button class="secondary small" ${canEdit?'':'disabled title="Requires HR Manager role"'}>Run health check</button><button class="secondary small" ${canEdit?'':'disabled title="Requires HR Manager role"'}>Rotate credentials</button></div>
     </div>
   </div>
   <div class="panel" style="margin-top:15px;">
@@ -1341,11 +1491,11 @@ function renderReports(){
   const autoResPct = exc.length ? (100*(exc.length-open.length)/exc.length).toFixed(1) : '100.0';
 
   return `
-  <div class="rule-note"><div>${ic('<path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>')}<b>Three reports, sourced from the requirement document.</b><p>Payroll Attendance Register (&sect;2.1, E3-FR1&ndash;FR4) &middot; Exception Report (&sect;2.1, E2-FR1&ndash;FR4) &middot; Audit &amp; Compliance Report (AUD-3-FR1&ndash;FR3). ${canEx?'':'Viewing as '+CURRENT_ROLE+' — export requires the Admin or Auditor role.'}</p></div></div>
+  <div class="rule-note"><div>${ic('<path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>')}<b>Three reports, sourced from the requirement document.</b><p>Payroll Attendance Register (&sect;2.1, E3-FR1&ndash;FR4) &middot; Exception Report (&sect;2.1, E2-FR1&ndash;FR4) &middot; Audit &amp; Compliance Report (AUD-3-FR1&ndash;FR3). ${canEx?'':'Viewing as '+CURRENT_ROLE+' — export requires HR Operations Lead or HR Manager access.'}</p></div></div>
 
   <div class="report-card" style="margin-bottom:15px;">
     <div class="panel-head"><div><h2>Payroll Attendance Register</h2><p>Payroll-ready register with every required component, defensible line by line (E3-FR1&ndash;FR2).</p></div>
-      <div class="hstack"><button class="secondary small" id="btnExpPdf1" ${canEx?'':'disabled title="Requires Admin or Auditor role"'}>Export PDF</button><button class="secondary small" id="btnExpCsv1" ${canEx?'':'disabled title="Requires Admin or Auditor role"'}>Export CSV</button><button class="primary small" id="btnPublish" ${canEx?'':'disabled title="Requires Admin or Auditor role"'}>Publish to payroll</button></div>
+      <div class="hstack"><button class="secondary small" id="btnExpPdf1" ${canEx?'':'disabled title="Requires HR Operations Lead or HR Manager"'}>Export PDF</button><button class="secondary small" id="btnExpCsv1" ${canEx?'':'disabled title="Requires HR Operations Lead or HR Manager"'}>Export CSV</button><button class="primary small" id="btnPublish" ${canEx?'':'disabled title="Requires HR Operations Lead or HR Manager"'}>Publish to payroll</button></div>
     </div>
     <div class="payroll-metrics" style="margin-bottom:0;">
       <div><b>${reg.length}</b><span>Employees</span></div>
@@ -1362,7 +1512,7 @@ function renderReports(){
 
   <div class="report-card" style="margin-bottom:15px;">
     <div class="panel-head"><div><h2>Exception Report</h2><p>Every exception type this cycle, deduplicated and ranked, with cause and recommended action (E2-FR1&ndash;FR4).</p></div>
-      <div class="hstack"><button class="secondary small" id="btnExpPdf2" ${canEx?'':'disabled title="Requires Admin or Auditor role"'}>Export PDF</button><button class="secondary small" id="btnExpCsv2" ${canEx?'':'disabled title="Requires Admin or Auditor role"'}>Export CSV</button></div>
+      <div class="hstack"><button class="secondary small" id="btnExpPdf2" ${canEx?'':'disabled title="Requires HR Operations Lead or HR Manager"'}>Export PDF</button><button class="secondary small" id="btnExpCsv2" ${canEx?'':'disabled title="Requires HR Operations Lead or HR Manager"'}>Export CSV</button></div>
     </div>
     <div class="exception-summary" style="margin-bottom:0;">
       <div><b class="critical-text">${exc.filter(e=>e.severity==='High').length}</b><span>High severity</span></div>
@@ -1378,7 +1528,7 @@ function renderReports(){
 
   <div class="report-card">
     <div class="panel-head"><div><h2>Audit &amp; Compliance Report</h2><p>Per-cycle audit report — exceptions, overrides, auto-resolution rate, write-back log (AUD-3-FR1).</p></div>
-      <div class="hstack"><button class="secondary small" id="btnExpPdf3" ${canEx?'':'disabled title="Requires Admin or Auditor role"'}>Export PDF</button><button class="secondary small" id="btnExpCsv3" ${canEx?'':'disabled title="Requires Admin or Auditor role"'}>Export CSV (filtered)</button></div>
+      <div class="hstack"><button class="secondary small" id="btnExpPdf3" ${canEx?'':'disabled title="Requires HR Operations Lead or HR Manager"'}>Export PDF</button><button class="secondary small" id="btnExpCsv3" ${canEx?'':'disabled title="Requires HR Operations Lead or HR Manager"'}>Export CSV (filtered)</button></div>
     </div>
     <div class="payroll-metrics" style="margin-bottom:0;grid-template-columns:repeat(4,1fr);">
       <div><b>${autoResPct}%</b><span>Auto-resolution rate</span></div>
@@ -1386,7 +1536,7 @@ function renderReports(){
       <div><b>${auditLog.length}</b><span>Write-back log entries</span></div>
       <div><b>100%</b><span>Decisions with lineage</span></div>
     </div>
-    <p class="muted" style="margin-top:12px;">Full lineage table available in <a href="#" data-goto="audit">Audit Trail</a>. Export is tenant-scoped and supports filtering by employee, period and exception type (AUD-3-FR2); the Auditor role has read-only access with no mutation rights (AUD-3-FR3).</p>
+    <p class="muted" style="margin-top:12px;">Full lineage is available in <a href="#" data-goto="audit">Audit Trail</a>. Export is tenant-scoped and supports filtering by employee, period and exception type (AUD-3-FR2).</p>
   </div>`;
 }
 
@@ -1518,8 +1668,7 @@ function empDayDetail(empId,date){
       </div>
       ${events.length? `<div class="timeline-detail"><h3>Timeline</h3>${events.map((e,i)=>`<p>${i===events.length-1?'<i class="final"></i>':'<i></i>'}<b>${e.t}</b><span>${esc(e.label)}</span></p>`).join('')}</div>` : '<p class="muted" style="font-size:11px;">No raw source events for this day.</p>'}
       ${r.needsApproval && isOpen(r) ? `<div class="hstack" style="margin-top:6px;">
-        <button class="approve full" id="drawerApprove" ${canApprove()?'':'disabled title="Requires Approver or Admin role"'} style="flex:1;">Approve</button>
-        <button class="reject full" id="drawerReject" ${canApprove()?'':'disabled title="Requires Approver or Admin role"'} style="flex:1;">Reject</button>
+        ${CURRENT_ROLE==='Employee'&&r.empId===ACTIVE_EMPLOYEE_ID?'<button class="primary full" id="drawerSubmit" style="flex:1;">Submit correction</button>':`<button class="approve full" id="drawerApprove" ${canApprove()?'':'disabled title="Requires manager or HR approval authority"'} style="flex:1;">Approve</button><button class="reject full" id="drawerReject" ${canApprove()?'':'disabled title="Requires manager or HR approval authority"'} style="flex:1;">Reject</button>`}
       </div>` : ''}
       <button class="secondary full" id="closeDetail2" style="margin-top:8px;">Close</button>
     </div>
@@ -1528,6 +1677,8 @@ function empDayDetail(empId,date){
   document.getElementById('closeDetail').addEventListener('click', ()=> root.innerHTML='');
   document.getElementById('closeDetail2').addEventListener('click', ()=> root.innerHTML='');
   const da = document.getElementById('drawerApprove'), dr = document.getElementById('drawerReject');
+  const ds = document.getElementById('drawerSubmit');
+  if (ds) ds.addEventListener('click', ()=>{ root.innerHTML=''; showToast('Correction submitted to your reporting manager with source evidence.'); });
   if (da) da.addEventListener('click', ()=>{
     if (!canApprove()) return;
     overrides[r.excId] = {state:'Approved', actor:CURRENT_ROLE+' (You)', ts:new Date().toISOString()};
@@ -1544,27 +1695,34 @@ function empDayDetail(empId,date){
 
 /* ============================== shell render ============================== */
 function renderNav(){
-  document.getElementById('navA').innerHTML = NAV[0].items.map(navBtn).join('');
-  document.getElementById('navB').innerHTML = NAV[1].items.map(navBtn).join('');
-  document.getElementById('navC').innerHTML = NAV[2].items.map(navBtn).join('');
+  document.getElementById('navA').innerHTML = NAV[0].items.filter(it=>canAccessPage(it.id)).map(navBtn).join('');
+  document.getElementById('navB').innerHTML = NAV[1].items.filter(it=>canAccessPage(it.id)).map(navBtn).join('');
+  document.getElementById('navC').innerHTML = NAV[2].items.filter(it=>canAccessPage(it.id)).map(navBtn).join('');
+  document.querySelectorAll('.nav-group').forEach((el,i)=>{ el.style.display=[0,1,2].map(n=>NAV[n].items.some(it=>canAccessPage(it.id)))[i]?'':'none'; });
   function navBtn(it){
-    const badge = it.id==='exceptions' ? `<em>${allExceptions().filter(isOpen).length}</em>` : '';
-    return `<button type="button" class="nav-item ${it.id===ACTIVE_PAGE?'active':''}" data-page="${it.id}">${ICONS[it.icon]}<span class="lbl">${it.label}</span>${badge}</button>`;
+    const badge = it.id==='exceptions' ? `<em>${visibleExceptions().filter(isOpen).length}</em>` : '';
+    const label = CURRENT_ROLE==='Employee' && it.id==='register' ? 'My Attendance' : CURRENT_ROLE==='Reporting Manager' && it.id==='approvals' ? 'Team Approvals' : it.label;
+    return `<button type="button" class="nav-item ${it.id===ACTIVE_PAGE?'active':''}" data-page="${it.id}">${ICONS[it.icon]}<span class="lbl">${label}</span>${badge}</button>`;
   }
   document.querySelectorAll('.nav-item').forEach(b=> b.addEventListener('click', ()=>{ ACTIVE_PAGE=b.dataset.page; render(); }));
 }
 function renderRoleSwitch(){
   const el = document.getElementById('roleSwitch');
   el.innerHTML = ROLES.map(r=>`<option value="${r}" ${r===CURRENT_ROLE?'selected':''}>${r}</option>`).join('');
-  el.onchange = ()=>{ CURRENT_ROLE = el.value; render(); };
+  el.onchange = ()=>{ CURRENT_ROLE = el.value; ACTIVE_PAGE='dashboard'; APR_SELECTED.clear(); APR_TAB='Pending'; REG_FILTER={status:'all',q:''}; EXC_FILTER={severity:'all',type:'all',state:'all',dept:'all'}; render(); };
   const lbl = document.getElementById('userRoleLabel');
   if (lbl) lbl.textContent = CURRENT_ROLE;
+  const profile = {Employee:['Ritika Shah','RS'],'Reporting Manager':['Aditi Patel','AP'],'HR Operations Lead':['Karthik Menon','KM'],'HR Manager':['Priya Raman','PR']}[CURRENT_ROLE];
+  const name = document.querySelector('.user-copy b'), avatar = document.querySelector('.user-avatar');
+  if (name) name.textContent=profile[0]; if (avatar) avatar.textContent=profile[1];
 }
 function render(){
+  if (!canAccessPage(ACTIVE_PAGE)) ACTIVE_PAGE='dashboard';
   renderNav(); renderRoleSwitch();
   const meta = PAGE_META[ACTIVE_PAGE];
-  document.getElementById('pageTitle').textContent = meta.title;
-  document.getElementById('crumbPage').textContent = meta.title;
+  const roleTitle = CURRENT_ROLE==='Employee'&&ACTIVE_PAGE==='register'?'My Attendance':CURRENT_ROLE==='Reporting Manager'&&ACTIVE_PAGE==='approvals'?'Team Approvals':meta.title;
+  document.getElementById('pageTitle').textContent = roleTitle;
+  document.getElementById('crumbPage').textContent = roleTitle;
   const content = document.getElementById('content');
   content.innerHTML = `<div class="page-top"><p style="max-width:70ch;">${meta.sub}</p></div>` +
     ({dashboard:renderDashboard, insights:renderInsights, periods:renderPeriods, import:renderImportCentre, register:renderRegister, exceptions:renderExceptions,
@@ -1572,9 +1730,12 @@ function render(){
   wire();
 }
 function wire(){
-  document.querySelectorAll('[data-goto]').forEach(a=> a.addEventListener('click', e=>{ e.preventDefault(); ACTIVE_PAGE=a.dataset.goto; render(); }));
-  document.getElementById('btnBell').onclick = ()=> showToast(`${allExceptions().filter(isOpen).length} open exceptions need attention this cycle.`);
-  document.getElementById('btnWorkspace').onclick = ()=>{ ACTIVE_PAGE='periods'; render(); };
+  document.querySelectorAll('[data-goto]').forEach(a=> a.addEventListener('click', e=>{ e.preventDefault(); if(canAccessPage(a.dataset.goto)){ ACTIVE_PAGE=a.dataset.goto; render(); } }));
+  document.getElementById('btnBell').onclick = ()=> showToast(`${visibleExceptions().filter(isOpen).length} item${visibleExceptions().filter(isOpen).length===1?'':'s'} need attention in your scope.`);
+  document.getElementById('btnWorkspace').onclick = ()=>{ ACTIVE_PAGE=canAccessPage('periods')?'periods':'dashboard'; render(); };
+  document.querySelectorAll('[data-prompt]').forEach(b=>b.addEventListener('click',()=>{ const input=document.getElementById('aiPrompt'); if(input){ input.value=b.dataset.prompt; input.focus(); } }));
+  const ask=document.getElementById('btnAskAI');
+  if(ask) ask.addEventListener('click',()=>{ const input=document.getElementById('aiPrompt'), answer=document.getElementById('aiAnswer'); if(!input.value.trim()){ showToast('Enter a question about attendance first.'); return; } const scope=CURRENT_ROLE==='Employee'?'your personal attendance only':CURRENT_ROLE==='Reporting Manager'?'your direct-report team only':'attendance operations and payroll readiness'; const open=visibleExceptions().filter(isOpen).length; answer.innerHTML=`<div class="ai-answer"><b>Scoped AI response</b><br>For “${esc(input.value.trim())}”, I reviewed ${scope}. There ${open===1?'is':'are'} ${open} open attendance item${open===1?'':'s'} in scope. Prioritise missing-punch and approval actions before the attendance cut-off. No data outside your authorised scope was used.</div>`; });
 
   if (ACTIVE_PAGE==='register'){
     const sS=document.getElementById('fStatus'), qI=document.getElementById('fQ');
@@ -1592,11 +1753,13 @@ function wire(){
   }
   if (ACTIVE_PAGE==='approvals'){
     function doApprove(r){
+      if (!visibleApprovalCases().some(item=>item.excId===r.excId)) return;
       overrides[r.excId] = {state:'Approved', actor:CURRENT_ROLE+' (You)', ts:new Date().toISOString()};
       logAudit(r.excId, 'approval.state', approvalStateOf(r), 'Approved', 'UI action', r.approvalType, CURRENT_ROLE);
       APR_SELECTED.delete(r.excId);
     }
     function doReject(r){
+      if (!visibleApprovalCases().some(item=>item.excId===r.excId)) return;
       overrides[r.excId] = {state:'Rejected', actor:CURRENT_ROLE+' (You)', ts:new Date().toISOString()};
       logAudit(r.excId, 'approval.state', approvalStateOf(r), 'Rejected', 'UI action', r.approvalType, CURRENT_ROLE);
       APR_SELECTED.delete(r.excId);
@@ -1624,12 +1787,12 @@ function wire(){
     const bA = document.getElementById('bulkApprove'), bR = document.getElementById('bulkReject');
     if (bA) bA.addEventListener('click', ()=>{
       if (!canApprove()) return;
-      let n=0; approvalCases().forEach(r=>{ if (APR_SELECTED.has(r.excId)){ doApprove(r); n++; } });
+      let n=0; visibleApprovalCases().forEach(r=>{ if (APR_SELECTED.has(r.excId)){ doApprove(r); n++; } });
       showToast(`${n} case${n===1?'':'s'} approved — written back to greytHR.`); render();
     });
     if (bR) bR.addEventListener('click', ()=>{
       if (!canApprove()) return;
-      let n=0; approvalCases().forEach(r=>{ if (APR_SELECTED.has(r.excId)){ doReject(r); n++; } });
+      let n=0; visibleApprovalCases().forEach(r=>{ if (APR_SELECTED.has(r.excId)){ doReject(r); n++; } });
       showToast(`${n} case${n===1?'':'s'} rejected.`); render();
     });
   }
@@ -1664,7 +1827,7 @@ function wire(){
     if (appl) appl.addEventListener('click', ()=>{
       if (!canEditConfig()) return;
       Object.assign(CONFIG, readForm());
-      logAudit('CONFIG','thresholds','—','updated','UI action','NFR-7','Admin');
+      logAudit('CONFIG','thresholds','—','updated','UI action','NFR-7','HR Manager');
       recomputeAll(); showToast('Configuration applied — full cycle recomputed, no redeployment.'); render();
     });
     if (rst) rst.addEventListener('click', ()=>{
