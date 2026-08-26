@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ApplicationRole } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { IdentityMembershipService } from '../auth/identity-membership.service';
 
 export interface TenantSummary {
   id: string;
@@ -12,24 +12,22 @@ export interface TenantSummary {
 
 @Injectable()
 export class MeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly identities: IdentityMembershipService,
+  ) {}
 
-  async listTenants(cognitoSubject: string): Promise<TenantSummary[]> {
-    const memberships = await this.prisma.tenantMembership.findMany({
-      where: {
-        cognitoSubject,
-        active: true,
-        tenant: { status: 'ACTIVE' },
-      },
-      select: {
-        role: true,
-        tenant: {
-          select: { id: true, name: true, slug: true, timezone: true },
-        },
-      },
-      orderBy: { tenant: { name: 'asc' } },
-    });
+  async listTenants(
+    connectionId: string,
+    providerSubject: string,
+  ): Promise<TenantSummary[]> {
+    const memberships = await this.identities.list(
+      connectionId,
+      providerSubject,
+    );
 
-    return memberships.map(({ role, tenant }) => ({ ...tenant, role }));
+    return memberships.map(({ role, tenant: { status: _status, ...tenant } }) => ({
+      ...tenant,
+      role,
+    }));
   }
 }

@@ -1,16 +1,16 @@
 import { createContext } from 'react'
 
 export interface AuthUser {
-  username: string
+  subject: string
   email?: string
 }
 
 export interface AuthContextValue {
-  status: 'loading' | 'authenticated' | 'unauthenticated' | 'misconfigured' | 'newPasswordRequired'
+  status: 'loading' | 'redirecting' | 'authenticated' | 'unauthenticated' | 'misconfigured' | 'error'
   user: AuthUser | null
-  signIn: (username: string, password: string) => Promise<void>
-  completeNewPassword: (newPassword: string) => Promise<void>
-  signOut: () => void
+  error: string
+  signIn: (organization: string) => Promise<void>
+  signOut: () => Promise<void>
   getAccessToken: () => Promise<string>
 }
 

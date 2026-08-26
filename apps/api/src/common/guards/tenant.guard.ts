@@ -6,7 +6,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PrismaService } from '../../prisma/prisma.service';
+import { IdentityMembershipService } from '../../auth/identity-membership.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SKIP_TENANT_KEY } from '../decorators/skip-tenant.decorator';
 import { AuthenticatedRequest } from '../types/authenticated-request';
@@ -15,7 +15,7 @@ import { AuthenticatedRequest } from '../types/authenticated-request';
 export class TenantGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly identities: IdentityMembershipService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -39,15 +39,11 @@ export class TenantGuard implements CanActivate {
       throw new ForbiddenException('Authenticated subject is required');
     }
 
-    const membership = await this.prisma.tenantMembership.findUnique({
-      where: {
-        tenantId_cognitoSubject: {
-          tenantId: value,
-          cognitoSubject: request.auth.subject,
-        },
-      },
-      select: { active: true, role: true, tenant: { select: { status: true } } },
-    });
+    const membership = await this.identities.find(
+      request.auth.connectionId,
+      request.auth.subject,
+      value,
+    );
     if (!membership?.active || membership.tenant.status !== 'ACTIVE') {
       throw new ForbiddenException('No active membership for this tenant');
     }

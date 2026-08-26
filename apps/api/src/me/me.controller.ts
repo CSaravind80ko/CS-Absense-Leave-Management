@@ -1,6 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Req } from '@nestjs/common';
 import { SkipTenant } from '../common/decorators/skip-tenant.decorator';
-import { Subject } from '../common/decorators/subject.decorator';
+import { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MeService } from './me.service';
 
 @Controller('me')
@@ -9,7 +9,10 @@ export class MeController {
   constructor(private readonly me: MeService) {}
 
   @Get('tenants')
-  listTenants(@Subject() subject: string) {
-    return this.me.listTenants(subject);
+  listTenants(@Req() request: AuthenticatedRequest) {
+    return this.me.listTenants(
+      request.auth.connectionId,
+      request.auth.subject,
+    );
   }
 }

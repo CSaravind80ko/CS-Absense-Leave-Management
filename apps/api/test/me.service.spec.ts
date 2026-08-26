@@ -1,24 +1,27 @@
-import { PrismaService } from '../src/prisma/prisma.service';
+import { IdentityMembershipService } from '../src/auth/identity-membership.service';
 import { MeService } from '../src/me/me.service';
 
 describe('MeService', () => {
-  it('returns flattened active tenant memberships', async () => {
-    const findMany = jest.fn().mockResolvedValue([
+  it('returns tenants from verified external identity mappings', async () => {
+    const list = jest.fn().mockResolvedValue([
       {
+        active: true,
         role: 'HR_ADMIN',
         tenant: {
           id: 'de305d54-75b4-431b-adb2-eb6b9e546014',
           name: 'Example Organization',
           slug: 'example',
           timezone: 'Asia/Kolkata',
+          status: 'ACTIVE',
         },
       },
     ]);
-    const prisma = {
-      tenantMembership: { findMany },
-    } as unknown as PrismaService;
+    const identities = { list } as unknown as IdentityMembershipService;
 
-    const result = await new MeService(prisma).listTenants('cognito-user-1');
+    const result = await new MeService(identities).listTenants(
+      'connection-1',
+      'provider-user-1',
+    );
 
     expect(result).toEqual([
       {
@@ -29,14 +32,6 @@ describe('MeService', () => {
         role: 'HR_ADMIN',
       },
     ]);
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          cognitoSubject: 'cognito-user-1',
-          active: true,
-          tenant: { status: 'ACTIVE' },
-        },
-      }),
-    );
+    expect(list).toHaveBeenCalledWith('connection-1', 'provider-user-1');
   });
 });
