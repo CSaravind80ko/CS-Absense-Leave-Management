@@ -12,6 +12,35 @@ enum TenantStatus {
   SUSPENDED
 }
 
+enum IdentityConnectionType {
+  SHARED_COGNITO
+  DEDICATED_COGNITO
+}
+
+enum IdentityConnectionStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum IdentityMfaPolicy {
+  OPTIONAL
+  REQUIRED
+}
+
+enum TenantUserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+  PASSWORD_RESET_REQUIRED
+}
+
+enum UserInvitationStatus {
+  SENT
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
 enum ApplicationRole {
   TENANT_ADMIN
   HR_ADMIN
@@ -113,46 +142,123 @@ enum PayrollExportStatus {
 }
 
 model Tenant {
-  id               String                 @id @default(uuid()) @db.Uuid
-  name             String
-  slug             String                 @unique
-  status           TenantStatus           @default(ACTIVE)
-  timezone         String                 @default("UTC")
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  memberships      TenantMembership[]
-  departments      Department[]
-  locations        Location[]
-  shifts           Shift[]
-  employees        Employee[]
-  periods          ProcessingPeriod[]
-  importJobs       AttendanceImportJob[]
-  importFiles      AttendanceImportFile[]
-  importRows       AttendanceImportRow[]
-  punches          AttendancePunch[]
-  attendanceDays   AttendanceDay[]
-  exceptions       AttendanceException[]
-  approvalRequests ApprovalRequest[]
-  approvalActions  ApprovalAction[]
-  payrollExports   PayrollExport[]
-  payrollItems     PayrollExportItem[]
-  auditEvents      AuditEvent[]
+  id                  String                 @id @default(uuid()) @db.Uuid
+  name                String
+  slug                String                 @unique
+  status              TenantStatus           @default(ACTIVE)
+  timezone            String                 @default("UTC")
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  memberships         TenantMembership[]
+  identityConnections IdentityConnection[]
+  externalIdentities  ExternalIdentity[]
+  userInvitations     UserInvitation[]
+  departments         Department[]
+  locations           Location[]
+  shifts              Shift[]
+  employees           Employee[]
+  periods             ProcessingPeriod[]
+  importJobs          AttendanceImportJob[]
+  importFiles         AttendanceImportFile[]
+  importRows          AttendanceImportRow[]
+  punches             AttendancePunch[]
+  attendanceDays      AttendanceDay[]
+  exceptions          AttendanceException[]
+  approvalRequests    ApprovalRequest[]
+  approvalActions     ApprovalAction[]
+  payrollExports      PayrollExport[]
+  payrollItems        PayrollExportItem[]
+  auditEvents         AuditEvent[]
 }
 
 model TenantMembership {
-  id             String          @id @default(uuid()) @db.Uuid
-  tenantId       String          @db.Uuid
-  cognitoSubject String
-  email          String?
-  role           ApplicationRole
-  active         Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @db.Uuid
+  cognitoSubject     String?
+  email              String?
+  role               ApplicationRole
+  active             Boolean            @default(true)
+  lifecycleStatus    TenantUserStatus   @default(ACTIVE)
+  mfaRequired        Boolean            @default(false)
+  invitedAt          DateTime?
+  disabledAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  externalIdentities ExternalIdentity[]
+  invitations        UserInvitation[]
 
   @@unique([tenantId, cognitoSubject])
   @@index([cognitoSubject, active])
   @@index([tenantId, role])
+}
+
+model IdentityConnection {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  tenantId              String?                  @db.Uuid
+  type                  IdentityConnectionType
+  status                IdentityConnectionStatus @default(ACTIVE)
+  issuer                String                   @unique
+  clientId              String
+  authorizationEndpoint String
+  tokenEndpoint         String
+  endSessionEndpoint    String
+  discoverySlug         String?                  @unique
+  verifiedDomains       String[]                 @default([])
+  scopes                String[]                 @default(["openid", "email", "profile"])
+  isDefault             Boolean                  @default(false)
+  clientSecretReference String?
+  cognitoUserPoolId     String
+  awsRegion             String
+  mfaPolicy             IdentityMfaPolicy        @default(OPTIONAL)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  tenant                Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  externalIdentities    ExternalIdentity[]
+  userInvitations       UserInvitation[]
+
+  @@index([status, isDefault])
+  @@index([tenantId, status])
+}
+
+model ExternalIdentity {
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @db.Uuid
+  tenantMembershipId String             @db.Uuid
+  connectionId       String             @db.Uuid
+  providerSubject    String
+  providerUsername   String?
+  createdAt          DateTime           @default(now())
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantMembership   TenantMembership   @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
+  connection         IdentityConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+
+  @@unique([connectionId, providerSubject, tenantId])
+  @@unique([tenantMembershipId, connectionId])
+  @@index([connectionId, providerSubject])
+  @@index([tenantId, tenantMembershipId])
+}
+
+model UserInvitation {
+  id                 String               @id @default(uuid()) @db.Uuid
+  tenantId           String               @db.Uuid
+  tenantMembershipId String               @db.Uuid
+  connectionId       String               @db.Uuid
+  email              String
+  status             UserInvitationStatus @default(SENT)
+  sentAt             DateTime             @default(now())
+  lastSentAt         DateTime             @default(now())
+  resendCount        Int                  @default(0)
+  acceptedAt         DateTime?
+  createdBySubject   String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantMembership   TenantMembership     @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
+  connection         IdentityConnection   @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status])
+  @@index([tenantMembershipId, status])
 }
 
 model Department {

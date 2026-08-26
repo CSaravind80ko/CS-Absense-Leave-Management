@@ -1,17 +1,22 @@
-import { CognitoUserPool } from 'amazon-cognito-identity-js'
+export const authRuntimeConfig = {
+  redirectUri:
+    import.meta.env.VITE_AUTH_REDIRECT_URI?.trim() || window.location.origin,
+  postLogoutRedirectUri:
+    import.meta.env.VITE_AUTH_POST_LOGOUT_REDIRECT_URI?.trim() ||
+    window.location.origin,
+}
 
-const authConfig = {
-  userPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID?.trim() ?? '',
-  clientId: import.meta.env.VITE_COGNITO_CLIENT_ID?.trim() ?? '',
-  region: import.meta.env.VITE_AWS_REGION?.trim() ?? '',
+function isValidRedirect(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.hostname === 'localhost'
+  } catch {
+    return false
+  }
 }
 
 export const missingAuthConfig = [
-  !authConfig.userPoolId && 'VITE_COGNITO_USER_POOL_ID',
-  !authConfig.clientId && 'VITE_COGNITO_CLIENT_ID',
-  !authConfig.region && 'VITE_AWS_REGION',
+  !isValidRedirect(authRuntimeConfig.redirectUri) && 'VITE_AUTH_REDIRECT_URI',
+  !isValidRedirect(authRuntimeConfig.postLogoutRedirectUri) &&
+    'VITE_AUTH_POST_LOGOUT_REDIRECT_URI',
 ].filter((name): name is string => Boolean(name))
-
-export const userPool = missingAuthConfig.length === 0
-  ? new CognitoUserPool({ UserPoolId: authConfig.userPoolId, ClientId: authConfig.clientId })
-  : null

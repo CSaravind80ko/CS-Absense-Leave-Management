@@ -5,15 +5,15 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { CognitoJwtService } from '../../auth/cognito-jwt.service';
+import { IdentityTokenVerifier } from '../../auth/identity-token-verifier.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { AuthenticatedRequest } from '../types/authenticated-request';
 
 @Injectable()
-export class CognitoAuthGuard implements CanActivate {
+export class IdentityAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly jwt: CognitoJwtService,
+    private readonly verifier: IdentityTokenVerifier,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -33,10 +33,11 @@ export class CognitoAuthGuard implements CanActivate {
       throw new UnauthorizedException('Bearer token is required');
     }
 
-    const payload = await this.jwt.verify(match[1]);
+    const identity = await this.verifier.verify(match[1]);
     request.auth = {
-      subject: payload.sub as string,
-      claims: payload as Readonly<Record<string, unknown>>,
+      connectionId: identity.connectionId,
+      subject: identity.subject,
+      claims: identity.claims as Readonly<Record<string, unknown>>,
     };
     return true;
   }

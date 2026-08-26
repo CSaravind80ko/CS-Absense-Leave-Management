@@ -1,4 +1,8 @@
-import { ApplicationRole, PrismaClient } from '@prisma/client';
+import {
+  ApplicationRole,
+  IdentityConnectionType,
+  PrismaClient,
+} from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -13,6 +17,22 @@ async function main(): Promise<void> {
   const tenantSlug = required('SEED_TENANT_SLUG');
   const cognitoSubject = required('SEED_ADMIN_COGNITO_SUBJECT');
   const email = required('SEED_ADMIN_EMAIL');
+  const issuer = required('SEED_IDENTITY_ISSUER').replace(/\/$/, '');
+  const clientId = required('SEED_IDENTITY_CLIENT_ID');
+  const hostedUiDomain = required('SEED_IDENTITY_HOSTED_UI_DOMAIN').replace(
+    /\/$/,
+    '',
+  );
+  const issuerParts = new URL(issuer);
+  const awsRegion = issuerParts.hostname.split('.')[1];
+  const cognitoUserPoolId = issuerParts.pathname.replace(/^\//, '');
+  const mfaPolicy =
+    process.env.SEED_IDENTITY_MFA_POLICY === 'REQUIRED'
+      ? 'REQUIRED'
+      : 'OPTIONAL';
+  if (!awsRegion || !cognitoUserPoolId) {
+    throw new Error('SEED_IDENTITY_ISSUER is not a Cognito user-pool issuer');
+  }
 
   const tenant = await prisma.tenant.upsert({
     where: { slug: tenantSlug },
@@ -20,7 +40,34 @@ async function main(): Promise<void> {
     create: { name: tenantName, slug: tenantSlug },
   });
 
-  await prisma.tenantMembership.upsert({
+  const connection = await prisma.identityConnection.upsert({
+    where: { issuer },
+    update: {
+      clientId,
+      authorizationEndpoint: `${hostedUiDomain}/oauth2/authorize`,
+      tokenEndpoint: `${hostedUiDomain}/oauth2/token`,
+      endSessionEndpoint: `${hostedUiDomain}/logout`,
+      status: 'ACTIVE',
+      isDefault: true,
+      awsRegion,
+      cognitoUserPoolId,
+      mfaPolicy,
+    },
+    create: {
+      type: IdentityConnectionType.SHARED_COGNITO,
+      issuer,
+      clientId,
+      authorizationEndpoint: `${hostedUiDomain}/oauth2/authorize`,
+      tokenEndpoint: `${hostedUiDomain}/oauth2/token`,
+      endSessionEndpoint: `${hostedUiDomain}/logout`,
+      isDefault: true,
+      awsRegion,
+      cognitoUserPoolId,
+      mfaPolicy,
+    },
+  });
+
+  const membership = await prisma.tenantMembership.upsert({
     where: {
       tenantId_cognitoSubject: {
         tenantId: tenant.id,
@@ -33,6 +80,24 @@ async function main(): Promise<void> {
       cognitoSubject,
       email,
       role: ApplicationRole.HR_ADMIN,
+    },
+  });
+
+  await prisma.externalIdentity.upsert({
+    where: {
+      connectionId_providerSubject_tenantId: {
+        connectionId: connection.id,
+        providerSubject: cognitoSubject,
+        providerUsername: email,
+        tenantId: tenant.id,
+      },
+    },
+    update: { providerUsername: email },
+    create: {
+      connectionId: connection.id,
+      providerSubject: cognitoSubject,
+      tenantId: tenant.id,
+      tenantMembershipId: membership.id,
     },
   });
 

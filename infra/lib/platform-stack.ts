@@ -4,7 +4,6 @@ import {
   RemovalPolicy,
   Stack,
   type StackProps,
-  aws_cognito as cognito,
   aws_cloudfront as cloudfront,
   aws_cloudfront_origins as origins,
   aws_ec2 as ec2,
@@ -12,6 +11,7 @@ import {
   aws_ecs as ecs,
   aws_ecs_patterns as ecsPatterns,
   aws_logs as logs,
+  aws_iam as iam,
   aws_rds as rds,
   aws_s3 as s3,
   aws_s3_deployment as s3Deployment,
@@ -19,9 +19,14 @@ import {
   aws_sqs as sqs,
 } from 'aws-cdk-lib'
 import { Construct } from 'constructs'
+import { CognitoOidcConnection } from './cognito-oidc-connection.js'
 
 interface AttendancePlatformStackProps extends StackProps {
   stage: string
+  identityCallbackUrls: string[]
+  identityLogoutUrls: string[]
+  identityDomainPrefix: string
+  identityAdminPoolArns: string[]
 }
 
 export class AttendancePlatformStack extends Stack {
@@ -68,31 +73,12 @@ export class AttendancePlatformStack extends Stack {
       removalPolicy,
     })
 
-    const userPool = new cognito.UserPool(this, 'UserPool', {
-      selfSignUpEnabled: false,
-      signInAliases: { email: true },
-      standardAttributes: {
-        email: { required: true, mutable: true },
-        givenName: { required: true, mutable: true },
-        familyName: { required: true, mutable: true },
-      },
-      passwordPolicy: {
-        minLength: 12,
-        requireDigits: true,
-        requireLowercase: true,
-        requireSymbols: true,
-        requireUppercase: true,
-      },
-      mfa: cognito.Mfa.OPTIONAL,
-      mfaSecondFactor: { otp: true, sms: false },
-      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+    const sharedIdentity = new CognitoOidcConnection(this, 'SharedIdentity', {
+      domainPrefix: props.identityDomainPrefix,
+      callbackUrls: props.identityCallbackUrls,
+      logoutUrls: props.identityLogoutUrls,
       removalPolicy,
-    })
-    const userPoolClient = userPool.addClient('WebClient', {
-      authFlows: { userSrp: true },
-      preventUserExistenceErrors: true,
-      accessTokenValidity: Duration.hours(1),
-      refreshTokenValidity: Duration.days(30),
+      requireMfa: isProduction,
     })
 
     const importBucket = new s3.Bucket(this, 'ImportBucket', {
@@ -146,8 +132,6 @@ export class AttendancePlatformStack extends Stack {
         environment: {
           NODE_ENV: 'production',
           PORT: '3000',
-          COGNITO_ISSUER: `https://cognito-idp.${this.region}.amazonaws.com/${userPool.userPoolId}`,
-          COGNITO_AUDIENCE: userPoolClient.userPoolClientId,
           DATABASE_HOST: database.dbInstanceEndpointAddress,
           DATABASE_PORT: database.dbInstanceEndpointPort,
           DATABASE_NAME: 'attendance',
@@ -169,6 +153,21 @@ export class AttendancePlatformStack extends Stack {
     database.connections.allowDefaultPortFrom(api.service)
     importBucket.grantReadWrite(api.taskDefinition.taskRole)
     processingQueue.grantSendMessages(api.taskDefinition.taskRole)
+    api.taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'cognito-idp:AdminCreateUser',
+          'cognito-idp:AdminGetUser',
+          'cognito-idp:AdminDisableUser',
+          'cognito-idp:AdminEnableUser',
+          'cognito-idp:AdminResetUserPassword',
+        ],
+        resources: [
+          sharedIdentity.userPool.userPoolArn,
+          ...props.identityAdminPoolArns,
+        ],
+      }),
+    )
 
     const distribution = new cloudfront.Distribution(this, 'WebDistribution', {
       defaultBehavior: {
@@ -206,7 +205,17 @@ export class AttendancePlatformStack extends Stack {
     new CfnOutput(this, 'DatabaseEndpoint', { value: database.dbInstanceEndpointAddress })
     new CfnOutput(this, 'ImportBucketName', { value: importBucket.bucketName })
     new CfnOutput(this, 'WebBucketName', { value: webBucket.bucketName })
-    new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId })
-    new CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId })
+    new CfnOutput(this, 'SharedIdentityIssuer', {
+      value: sharedIdentity.issuer(this.region),
+    })
+    new CfnOutput(this, 'SharedIdentityHostedUiBaseUrl', {
+      value: sharedIdentity.hostedUiBaseUrl(),
+    })
+    new CfnOutput(this, 'SharedIdentityUserPoolId', {
+      value: sharedIdentity.userPool.userPoolId,
+    })
+    new CfnOutput(this, 'SharedIdentityClientId', {
+      value: sharedIdentity.userPoolClient.userPoolClientId,
+    })
   }
 }
