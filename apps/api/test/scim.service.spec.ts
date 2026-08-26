@@ -1,6 +1,8 @@
 import {
   AdminCreateUserCommand,
   AdminDeleteUserCommand,
+  AdminDisableUserCommand,
+  AdminEnableUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ScimException } from '../src/scim/scim-protocol';
@@ -239,6 +241,176 @@ describe('ScimService', () => {
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { role: 'EMPLOYEE' } }),
+    );
+  });
+
+  it('restores the tenant membership when a soft-deleted user is reprovisioned', async () => {
+    const now = new Date();
+    const existing = {
+      id: '77777777-7777-4777-8777-777777777777',
+      tenantId: context.tenantId,
+      provisioningConnectionId: context.provisioningConnectionId,
+      tenantMembershipId: '88888888-8888-4888-8888-888888888888',
+      externalIdentityId: '99999999-9999-4999-8999-999999999999',
+      externalId: 'entra-id',
+      userName: 'employee@example.com',
+      normalizedUserName: 'employee@example.com',
+      givenName: null,
+      familyName: null,
+      formattedName: null,
+      emails: [{ value: 'employee@example.com', primary: true }],
+      primaryEmail: 'employee@example.com',
+      active: false,
+      deletedAt: now,
+      version: 2,
+      createdAt: now,
+      updatedAt: now,
+      groupMemberships: [],
+      externalIdentity: {
+        providerSubject: 'immutable-sub',
+        providerUsername: 'provider-username',
+      },
+    };
+    const membershipUpdate = jest.fn().mockResolvedValue({});
+    const tx = {
+      tenantMembership: { update: membershipUpdate },
+      scimUser: {
+        update: jest.fn().mockResolvedValue({
+          ...existing,
+          active: true,
+          deletedAt: null,
+          version: 3,
+          updatedAt: new Date(),
+        }),
+      },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const send = jest.fn().mockResolvedValue({});
+    const prisma = {
+      scimUser: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce(existing)
+          .mockResolvedValueOnce(null),
+      },
+      identityConnection: {
+        findFirst: jest.fn().mockResolvedValue(identityConnection()),
+      },
+      $transaction: jest.fn(async (callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ScimService(
+      prisma,
+      (() => ({ send }) as unknown as CognitoAdminClient) as CognitoAdminClientFactory,
+    );
+
+    await service.createUser(
+      context,
+      {
+        userName: existing.userName,
+        externalId: existing.externalId,
+        emails: existing.emails,
+        active: true,
+      },
+      'https://example.test/scim',
+    );
+
+    expect(send.mock.calls[0][0]).toBeInstanceOf(AdminEnableUserCommand);
+    expect(membershipUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: existing.tenantMembershipId },
+        data: expect.objectContaining({
+          active: true,
+          lifecycleStatus: 'ACTIVE',
+          disabledAt: null,
+        }),
+      }),
+    );
+  });
+
+  it('re-enables Cognito when a user DELETE cannot be persisted', async () => {
+    const now = new Date();
+    const user = {
+      id: '77777777-7777-4777-8777-777777777777',
+      tenantId: context.tenantId,
+      provisioningConnectionId: context.provisioningConnectionId,
+      tenantMembershipId: '88888888-8888-4888-8888-888888888888',
+      externalIdentityId: '99999999-9999-4999-8999-999999999999',
+      externalId: null,
+      userName: 'employee@example.com',
+      normalizedUserName: 'employee@example.com',
+      givenName: null,
+      familyName: null,
+      formattedName: null,
+      emails: [],
+      primaryEmail: null,
+      active: true,
+      deletedAt: null,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      groupMemberships: [],
+      externalIdentity: {
+        providerSubject: 'immutable-sub',
+        providerUsername: 'provider-username',
+      },
+    };
+    const send = jest.fn().mockResolvedValue({});
+    const prisma = {
+      scimUser: { findFirst: jest.fn().mockResolvedValue(user) },
+      identityConnection: {
+        findFirst: jest.fn().mockResolvedValue(identityConnection()),
+      },
+      $transaction: jest.fn().mockRejectedValue(new Error('database failed')),
+    } as unknown as PrismaService;
+    const service = new ScimService(
+      prisma,
+      (() => ({ send }) as unknown as CognitoAdminClient) as CognitoAdminClientFactory,
+    );
+
+    await expect(service.deleteUser(context, user.id)).rejects.toThrow(
+      'database failed',
+    );
+    expect(send.mock.calls[0][0]).toBeInstanceOf(AdminDisableUserCommand);
+    expect(send.mock.calls[1][0]).toBeInstanceOf(AdminEnableUserCommand);
+  });
+
+  it('reserves an idempotency key before executing side effects', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const update = jest.fn().mockResolvedValue({});
+    const action = jest.fn().mockResolvedValue({ id: 'resource-1' });
+    const prisma = {
+      scimIdempotencyRecord: {
+        create,
+        update,
+        deleteMany: jest.fn(),
+      },
+    } as unknown as PrismaService;
+    const service = new ScimService(prisma, jest.fn() as never);
+
+    await expect(
+      service.idempotent(
+        context,
+        'request-key',
+        'POST',
+        '/Users',
+        { userName: 'employee@example.com' },
+        201,
+        action,
+      ),
+    ).resolves.toEqual({ status: 201, body: { id: 'resource-1' } });
+    expect(create.mock.invocationCallOrder[0]).toBeLessThan(
+      action.mock.invocationCallOrder[0],
+    );
+    expect(action.mock.invocationCallOrder[0]).toBeLessThan(
+      update.mock.invocationCallOrder[0],
+    );
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          responseStatus: 0,
+          responseBody: { state: 'PROCESSING' },
+        }),
+      }),
     );
   });
 });

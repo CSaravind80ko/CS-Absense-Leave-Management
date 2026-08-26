@@ -94,7 +94,7 @@ For a suspected leak:
 
 - Apply the `20260826170000_scim_provisioning` migration before deploying the API.
 - Keep PostgreSQL storage encrypted and backed up; no additional plaintext secret store is introduced.
-- The API task role requires only `AdminCreateUser`, `AdminGetUser`, `AdminDeleteUser`, `AdminDisableUser`, `AdminEnableUser`, and `AdminUpdateUserAttributes` on the shared pool and explicitly allowlisted dedicated pool ARNs.
+- The API task role requires only `AdminCreateUser`, `AdminGetUser`, `AdminDeleteUser`, `AdminDisableUser`, `AdminEnableUser`, `AdminUpdateUserAttributes`, and `AdminDeleteUserAttributes` on the shared pool and explicitly allowlisted dedicated pool ARNs.
 - Set `SCIM_PUBLIC_BASE_URL`, `API_JSON_BODY_LIMIT`, and `SCIM_RATE_LIMIT_PER_MINUTE` for the environment. Put an edge/WAF rate limit in front of the API for distributed denial-of-service protection; the application also enforces per-process credential limits.
 - Dedicated Cognito pool ARNs must remain in `IDENTITY_ADMIN_POOL_ARNS`. SCIM does not expand this allowlist.
 - Retain sanitized audit events according to the organization's identity-governance policy and alert on repeated authentication failures, rate-limit responses, or compensation-required errors.

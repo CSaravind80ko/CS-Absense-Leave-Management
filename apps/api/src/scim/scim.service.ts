@@ -1,6 +1,7 @@
 import {
   AdminCreateUserCommand,
   AdminDeleteUserCommand,
+  AdminDeleteUserAttributesCommand,
   AdminDisableUserCommand,
   AdminEnableUserCommand,
   AdminGetUserCommand,
@@ -229,25 +230,59 @@ export class ScimService {
       include: USER_INCLUDE,
     });
     if (existing?.deletedAt) {
-      await this.updateCognitoAttributes(context, existing, input);
-      await this.setActive(context, existing, input.active);
-      const restored = await this.prisma.scimUser.update({
-        where: { id: existing.id },
-        data: {
-          ...userData(input),
-          deletedAt: null,
-          version: { increment: 1 },
-        },
-        include: USER_INCLUDE,
-      });
-      await this.audit(
-        context,
-        'scim.user.reactivated',
-        restored.id,
-        safeUserAudit(restored),
-      );
-      await this.recalculateRole(context, restored.id);
-      return this.userResource(restored, baseUrl);
+      const emailChanged = existing.primaryEmail !== input.primaryEmail;
+      const activeChanged = existing.active !== input.active;
+      let cognitoActiveChanged = false;
+      try {
+        if (emailChanged) {
+          await this.updateCognitoAttributes(context, existing, input);
+        }
+        if (activeChanged) {
+          cognitoActiveChanged = await this.setActive(
+            context,
+            existing,
+            input.active,
+          );
+        }
+        const restored = await this.prisma.$transaction(async (tx) => {
+          await tx.tenantMembership.update({
+            where: { id: existing.tenantMembershipId },
+            data: {
+              email: input.primaryEmail,
+              active: input.active,
+              lifecycleStatus: input.active ? 'ACTIVE' : 'DISABLED',
+              disabledAt: input.active ? null : new Date(),
+            },
+          });
+          const result = await tx.scimUser.update({
+            where: { id: existing.id },
+            data: {
+              ...userData(input),
+              deletedAt: null,
+              version: { increment: 1 },
+            },
+            include: USER_INCLUDE,
+          });
+          await this.auditTx(
+            tx,
+            context,
+            'scim.user.reactivated',
+            result.id,
+            safeUserAudit(result),
+          );
+          return result;
+        });
+        await this.recalculateRole(context, restored.id);
+        return this.userResource(restored, baseUrl);
+      } catch (error) {
+        await this.compensateUserMutation(
+          context,
+          existing,
+          emailChanged,
+          cognitoActiveChanged,
+        );
+        throw mapPersistenceError(error);
+      }
     }
     if (existing) {
       throw new ScimException(
@@ -322,6 +357,7 @@ export class ScimService {
             id: resourceId,
             tenantId: context.tenantId,
             provisioningConnectionId: context.provisioningConnectionId,
+            identityConnectionId: context.identityConnectionId,
             tenantMembershipId: membershipId,
             externalIdentityId,
             ...userData(input),
@@ -365,12 +401,17 @@ export class ScimService {
     if (sameUser(current, input)) return this.userResource(current, baseUrl);
     const emailChanged = current.primaryEmail !== input.primaryEmail;
     const activeChanged = current.active !== input.active;
+    let cognitoActiveChanged = false;
     try {
       if (emailChanged) {
         await this.updateCognitoAttributes(context, current, input);
       }
       if (activeChanged) {
-        await this.setActive(context, current, input.active);
+        cognitoActiveChanged = await this.setActive(
+          context,
+          current,
+          input.active,
+        );
       }
     } catch (error) {
       if (emailChanged) {
@@ -407,21 +448,12 @@ export class ScimService {
       return this.userResource(updated, baseUrl);
     } catch (error) {
       try {
-        if (activeChanged) {
-          const connection = await this.identityConnection(context);
-          const providerUsername = current.externalIdentity.providerUsername;
-          if (!providerUsername) {
-            throw new Error('missing providerUsername');
-          }
-          await this.setCognitoEnabled(
-            connection,
-            providerUsername,
-            current.active,
-          );
-        }
-        if (emailChanged) {
-          await this.restoreCognitoEmail(context, current);
-        }
+        await this.compensateUserMutation(
+          context,
+          current,
+          emailChanged,
+          cognitoActiveChanged,
+        );
       } catch (compensationError) {
         throw new ServiceUnavailableException(
           `SCIM update failed and Cognito compensation requires attention: ${errorMessage(compensationError)}`,
@@ -448,22 +480,42 @@ export class ScimService {
 
   async deleteUser(context: ScimContext, id: string) {
     const current = await this.user(context, id);
-    await this.setActive(context, current, false);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.tenantMembership.update({
-        where: { id: current.tenantMembershipId },
-        data: {
-          active: false,
-          lifecycleStatus: 'DISABLED',
-          disabledAt: new Date(),
-        },
+    const cognitoActiveChanged = await this.setActive(context, current, false);
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.tenantMembership.update({
+          where: { id: current.tenantMembershipId },
+          data: {
+            active: false,
+            lifecycleStatus: 'DISABLED',
+            disabledAt: new Date(),
+          },
+        });
+        await tx.scimUser.update({
+          where: { id: current.id },
+          data: {
+            active: false,
+            deletedAt: new Date(),
+            version: { increment: 1 },
+          },
+        });
+        await this.auditTx(tx, context, 'scim.user.deleted', current.id);
       });
-      await tx.scimUser.update({
-        where: { id: current.id },
-        data: { active: false, deletedAt: new Date(), version: { increment: 1 } },
-      });
-      await this.auditTx(tx, context, 'scim.user.deleted', current.id);
-    });
+    } catch (error) {
+      try {
+        await this.compensateUserMutation(
+          context,
+          current,
+          false,
+          cognitoActiveChanged,
+        );
+      } catch (compensationError) {
+        throw new ServiceUnavailableException(
+          `SCIM delete failed and Cognito compensation requires attention: ${errorMessage(compensationError)}`,
+        );
+      }
+      throw error;
+    }
   }
 
   async listGroups(
@@ -643,16 +695,39 @@ export class ScimService {
     const requestHash = createHash('sha256')
       .update(`${method}\n${path}\n${stableJson(body)}`)
       .digest('hex');
-    const existing = await this.prisma.scimIdempotencyRecord.findUnique({
+    await this.prisma.scimIdempotencyRecord.deleteMany({
       where: {
-        provisioningConnectionId_idempotencyKey: {
-          provisioningConnectionId: context.provisioningConnectionId,
-          idempotencyKey: key,
-        },
+        provisioningConnectionId: context.provisioningConnectionId,
+        idempotencyKey: key,
+        expiresAt: { lt: new Date() },
       },
     });
-    if (existing) {
+    try {
+      await this.prisma.scimIdempotencyRecord.create({
+        data: {
+          tenantId: context.tenantId,
+          provisioningConnectionId: context.provisioningConnectionId,
+          idempotencyKey: key,
+          requestHash,
+          method,
+          requestPath: path,
+          responseStatus: 0,
+          responseBody: { state: 'PROCESSING' },
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const existing = await this.prisma.scimIdempotencyRecord.findUnique({
+        where: {
+          provisioningConnectionId_idempotencyKey: {
+            provisioningConnectionId: context.provisioningConnectionId,
+            idempotencyKey: key,
+          },
+        },
+      });
       if (
+        !existing ||
         existing.requestHash !== requestHash ||
         existing.method !== method ||
         existing.requestPath !== path
@@ -663,30 +738,44 @@ export class ScimService {
           'uniqueness',
         );
       }
+      if (existing.responseStatus === 0) {
+        throw new ScimException(
+          HttpStatus.CONFLICT,
+          'A request with this Idempotency-Key is still in progress',
+          'uniqueness',
+        );
+      }
       return {
         status: existing.responseStatus,
         body: existing.responseBody as T,
       };
     }
-    const responseBody = await action();
     try {
-      await this.prisma.scimIdempotencyRecord.create({
+      const responseBody = await action();
+      await this.prisma.scimIdempotencyRecord.update({
+        where: {
+          provisioningConnectionId_idempotencyKey: {
+            provisioningConnectionId: context.provisioningConnectionId,
+            idempotencyKey: key,
+          },
+        },
         data: {
-          tenantId: context.tenantId,
+          responseStatus: status,
+          responseBody: responseBody as Prisma.InputJsonValue,
+        },
+      });
+      return { status, body: responseBody };
+    } catch (error) {
+      await this.prisma.scimIdempotencyRecord.deleteMany({
+        where: {
           provisioningConnectionId: context.provisioningConnectionId,
           idempotencyKey: key,
           requestHash,
-          method,
-          requestPath: path,
-          responseStatus: status,
-          responseBody: responseBody as Prisma.InputJsonValue,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          responseStatus: 0,
         },
       });
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
+      throw error;
     }
-    return { status, body: responseBody };
   }
 
   async recalculateRole(context: ScimContext, userId: string) {
@@ -941,8 +1030,8 @@ export class ScimService {
     context: ScimContext,
     user: ScimUserRecord,
     active: boolean,
-  ) {
-    if (user.active === active) return;
+  ): Promise<boolean> {
+    if (user.active === active) return false;
     if (active) {
       const connection = await this.identityConnection(context);
       const providerUsername = user.externalIdentity.providerUsername;
@@ -957,15 +1046,15 @@ export class ScimService {
           Username: providerUsername,
         }),
       );
-      return;
+      return true;
     }
-    await this.disableCognitoIfSafe(context, user);
+    return this.disableCognitoIfSafe(context, user);
   }
 
   private async disableCognitoIfSafe(
     context: ScimContext,
     user: ScimUserRecord,
-  ) {
+  ): Promise<boolean> {
     const connection = await this.identityConnection(context);
     const otherActive =
       connection.type === 'SHARED_COGNITO'
@@ -978,7 +1067,7 @@ export class ScimService {
             },
           })
         : 0;
-    if (otherActive > 0) return;
+    if (otherActive > 0) return false;
     const providerUsername = user.externalIdentity.providerUsername;
     if (!providerUsername) {
       throw new ServiceUnavailableException(
@@ -991,6 +1080,7 @@ export class ScimService {
         Username: providerUsername,
       }),
     );
+    return true;
   }
 
   private async deleteCognitoUser(
@@ -1028,18 +1118,43 @@ export class ScimService {
     providerUsername: string,
     email: string | null,
   ) {
+    if (!email) {
+      await this.client(connection.awsRegion).send(
+        new AdminDeleteUserAttributesCommand({
+          UserPoolId: connection.cognitoUserPoolId,
+          Username: providerUsername,
+          UserAttributeNames: ['email', 'email_verified'],
+        }),
+      );
+      return;
+    }
     await this.client(connection.awsRegion).send(
       new AdminUpdateUserAttributesCommand({
         UserPoolId: connection.cognitoUserPoolId,
         Username: providerUsername,
-        UserAttributes: email
-          ? [
-              { Name: 'email', Value: email },
-              { Name: 'email_verified', Value: 'true' },
-            ]
-          : [{ Name: 'email', Value: '' }],
+        UserAttributes: [
+          { Name: 'email', Value: email },
+          { Name: 'email_verified', Value: 'true' },
+        ],
       }),
     );
+  }
+
+  private async compensateUserMutation(
+    context: ScimContext,
+    user: ScimUserRecord,
+    emailChanged: boolean,
+    cognitoActiveChanged: boolean,
+  ) {
+    if (cognitoActiveChanged) {
+      const connection = await this.identityConnection(context);
+      const providerUsername = user.externalIdentity.providerUsername;
+      if (!providerUsername) throw new Error('missing providerUsername');
+      await this.setCognitoEnabled(connection, providerUsername, user.active);
+    }
+    if (emailChanged) {
+      await this.restoreCognitoEmail(context, user);
+    }
   }
 
   private async validateMemberIds(

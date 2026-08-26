@@ -182,6 +182,7 @@ export class AttendancePlatformStack extends Stack {
           'cognito-idp:AdminCreateUser',
           'cognito-idp:AdminGetUser',
           'cognito-idp:AdminDeleteUser',
+          'cognito-idp:AdminDeleteUserAttributes',
           'cognito-idp:AdminDisableUser',
           'cognito-idp:AdminEnableUser',
           'cognito-idp:AdminUpdateUserAttributes',
@@ -233,6 +234,10 @@ export class AttendancePlatformStack extends Stack {
         { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html' },
       ],
     })
+    api.taskDefinition.defaultContainer?.addEnvironment(
+      'SCIM_PUBLIC_BASE_URL',
+      `https://${distribution.distributionDomainName}/api/v1/scim/v2`,
+    )
 
     new s3Deployment.BucketDeployment(this, 'WebDeployment', {
       sources: [s3Deployment.Source.asset('../dist')],

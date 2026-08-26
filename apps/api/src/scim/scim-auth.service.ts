@@ -81,6 +81,7 @@ export class ScimAuthService {
         tenantId,
         samlConnectionId,
         enabled: true,
+        tenant: { status: 'ACTIVE' },
         samlConnection: { status: 'ACTIVE' },
         identityConnection: { status: 'ACTIVE' },
       },

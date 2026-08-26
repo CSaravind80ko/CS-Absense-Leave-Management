@@ -95,6 +95,13 @@ describe('ScimAuthService', () => {
       identityConnectionId: 'identity-1',
       credentialId: 'credential-1',
     });
+    expect(
+      prisma.scimProvisioningConnection.findFirst,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenant: { status: 'ACTIVE' } }),
+      }),
+    );
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ lastUsedIp: '203.0.113.9' }),
