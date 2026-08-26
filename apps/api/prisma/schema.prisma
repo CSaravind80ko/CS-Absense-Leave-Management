@@ -205,6 +205,7 @@ model TenantMembership {
   scimUsers           ScimUser[]
 
   @@unique([tenantId, cognitoSubject])
+  @@unique([id, tenantId])
   @@index([cognitoSubject, active])
   @@index([tenantId, role])
 }
@@ -267,6 +268,7 @@ model SamlConnection {
 
   @@unique([tenantId, identityConnectionId])
   @@unique([identityConnectionId, cognitoProviderName])
+  @@unique([id, tenantId, identityConnectionId])
   @@index([tenantId, status])
 }
 
@@ -285,6 +287,7 @@ model ExternalIdentity {
 
   @@unique([connectionId, providerSubject, tenantId])
   @@unique([tenantMembershipId, connectionId])
+  @@unique([id, tenantId, tenantMembershipId, connectionId])
   @@index([connectionId, providerSubject])
   @@index([tenantId, tenantMembershipId])
 }
@@ -302,7 +305,7 @@ model ScimProvisioningConnection {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  samlConnection       SamlConnection     @relation(fields: [samlConnectionId], references: [id], onDelete: Restrict)
+  samlConnection       SamlConnection     @relation(fields: [samlConnectionId, tenantId, identityConnectionId], references: [id, tenantId, identityConnectionId], onDelete: Restrict)
   identityConnection   IdentityConnection @relation(fields: [identityConnectionId], references: [id], onDelete: Restrict)
   credentials          ScimCredential[]
   users                ScimUser[]
@@ -312,6 +315,7 @@ model ScimProvisioningConnection {
 
   @@unique([id, tenantId])
   @@unique([id, tenantId, identityConnectionId])
+  @@unique([samlConnectionId, tenantId, identityConnectionId])
   @@index([tenantId, enabled])
   @@index([identityConnectionId, enabled])
 }
@@ -344,6 +348,7 @@ model ScimUser {
   id                       String                     @id @default(uuid()) @db.Uuid
   tenantId                 String                     @db.Uuid
   provisioningConnectionId String                     @db.Uuid
+  identityConnectionId     String                     @db.Uuid
   tenantMembershipId       String                     @db.Uuid
   externalIdentityId       String                     @unique @db.Uuid
   externalId               String?
@@ -360,15 +365,16 @@ model ScimUser {
   createdAt                DateTime                   @default(now())
   updatedAt                DateTime                   @updatedAt
   tenant                   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  tenantMembership         TenantMembership           @relation(fields: [tenantMembershipId], references: [id], onDelete: Restrict)
-  externalIdentity         ExternalIdentity           @relation(fields: [externalIdentityId], references: [id], onDelete: Restrict)
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId, identityConnectionId], references: [id, tenantId, identityConnectionId], onDelete: Restrict)
+  tenantMembership         TenantMembership           @relation(fields: [tenantMembershipId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  externalIdentity         ExternalIdentity           @relation(fields: [externalIdentityId, tenantId, tenantMembershipId, identityConnectionId], references: [id, tenantId, tenantMembershipId, connectionId], onDelete: Restrict)
   groupMemberships         ScimGroupMember[]
 
   @@unique([id, tenantId, provisioningConnectionId])
   @@unique([provisioningConnectionId, normalizedUserName])
   @@unique([provisioningConnectionId, externalId])
   @@unique([provisioningConnectionId, tenantMembershipId])
+  @@unique([externalIdentityId, tenantId, tenantMembershipId, identityConnectionId])
   @@index([tenantId, provisioningConnectionId, active])
   @@index([tenantMembershipId])
 }
