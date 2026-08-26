@@ -13,8 +13,8 @@ export class CognitoJwtService {
 
   async verify(token: string): Promise<JWTPayload> {
     const issuer = process.env.COGNITO_ISSUER;
-    const audience = process.env.COGNITO_AUDIENCE;
-    if (!issuer || !audience) {
+    const clientId = process.env.COGNITO_AUDIENCE;
+    if (!issuer || !clientId) {
       throw new UnauthorizedException('Cognito authentication is not configured');
     }
 
@@ -25,7 +25,6 @@ export class CognitoJwtService {
     try {
       ({ payload } = await jwtVerify(token, this.keySet, {
         issuer,
-        audience,
         algorithms: ['RS256'],
       }));
     } catch (error: unknown) {
@@ -36,6 +35,17 @@ export class CognitoJwtService {
     }
     if (!payload.sub) {
       throw new UnauthorizedException('Token has no subject');
+    }
+    const tokenUse = payload['token_use'];
+    const audience = payload.aud;
+    const validIdToken =
+      tokenUse === 'id' &&
+      (audience === clientId ||
+        (Array.isArray(audience) && audience.includes(clientId)));
+    const validAccessToken =
+      tokenUse === 'access' && payload['client_id'] === clientId;
+    if (!validIdToken && !validAccessToken) {
+      throw new UnauthorizedException('Token was not issued for this application');
     }
     return payload;
   }

@@ -29,10 +29,20 @@ docker compose up -d
 npm install
 npm run db:generate
 npm run db:migrate
+npm run db:seed
 npm run dev:api
 ```
 
 Run `npm run dev:web` in a second terminal. The web application uses `VITE_API_URL` and falls back to prototype mode while the API is unavailable.
+
+Before seeding, create the first HR administrator in Cognito and copy the user's immutable `sub` value into `SEED_ADMIN_COGNITO_SUBJECT` in `apps\api\.env`. Configure the same user pool and client in the root `.env`. The seed is idempotent and creates the tenant membership used by the authenticated `GET /api/v1/me/tenants` request.
+
+The web flow is:
+
+1. Authenticate with Cognito.
+2. Load active tenant memberships for the authenticated subject.
+3. Select a tenant, which supplies `X-Tenant-Id` on business API requests.
+4. Use role-protected employee management against PostgreSQL-backed APIs.
 
 ## Data boundaries
 
@@ -50,6 +60,7 @@ Attendance source rows are retained separately from calculated attendance days. 
 | `npm run lint` | Lint web and API code |
 | `npm run db:generate` | Generate the Prisma client |
 | `npm run db:migrate` | Apply local database migrations |
+| `npm run db:seed` | Seed the initial tenant and HR administrator |
 | `npm run infra:diff` | Preview AWS changes |
 | `npm run infra:deploy -- -- -c stage=dev` | Deploy the development stack |
 

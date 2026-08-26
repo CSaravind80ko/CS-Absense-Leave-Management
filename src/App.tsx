@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle, ArrowRight, Bell, CalendarDays, CheckCircle2, ChevronDown,
-  CircleHelp, Clock3, Download, FileUp, Filter, MoreHorizontal, Play,
+  CircleHelp, Clock3, Download, FileUp, Filter, LoaderCircle, MoreHorizontal, Play,
   Plus, Search, Settings2, ShieldCheck, Sparkles, Upload, Users, X,
 } from 'lucide-react'
 import './App.css'
-import { getApiHealth, type ApiHealth } from './lib/api'
+import { AuthGate } from './auth/AuthScreens'
+import { useAuth } from './auth/useAuth'
+import { EmployeesView } from './employees/EmployeesView'
+import { createApiClient, getApiHealth, type ApiHealth, type TenantMembership } from './lib/api'
 
-type View = 'Dashboard' | 'AI Insights' | 'Exception Patterns' | 'My Attendance' | 'Team Approvals' | 'Processing Periods' | 'Data Import Centre' | 'Attendance Register' | 'Exception Workbench' | 'Approval Inbox' | 'Leave & OD' | 'Comp-Off' | 'Payroll Register' | 'Rule Configuration' | 'User & Role Management' | 'Integration Settings' | 'Reports' | 'Audit Trail'
+type View = 'Dashboard' | 'AI Insights' | 'Exception Patterns' | 'My Attendance' | 'Team Approvals' | 'Processing Periods' | 'Data Import Centre' | 'Employees' | 'Attendance Register' | 'Exception Workbench' | 'Approval Inbox' | 'Leave & OD' | 'Comp-Off' | 'Payroll Register' | 'Rule Configuration' | 'User & Role Management' | 'Integration Settings' | 'Reports' | 'Audit Trail'
 type Toast = { message: string; kind?: 'success' | 'warning' } | null
 type Persona = 'Employee' | 'Reporting Manager' | 'HR Operations Lead' | 'HR Manager' | 'VP of HR' | 'CHRO'
 
@@ -15,7 +18,7 @@ const nav: { label: View; group?: string }[] = [
   { label: 'Dashboard' }, { label: 'AI Insights' }, { label: 'Exception Patterns' },
   { label: 'My Attendance', group: 'SELF SERVICE' }, { label: 'Team Approvals' },
   { label: 'Processing Periods', group: 'OPERATIONS' },
-  { label: 'Data Import Centre' }, { label: 'Attendance Register' },
+  { label: 'Data Import Centre' }, { label: 'Employees' }, { label: 'Attendance Register' },
   { label: 'Exception Workbench' }, { label: 'Approval Inbox' },
   { label: 'Leave & OD', group: 'PAYROLL' }, { label: 'Comp-Off' },
   { label: 'Payroll Register' }, { label: 'Rule Configuration', group: 'CONFIGURATION' },
@@ -46,6 +49,48 @@ function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone
 }
 
 function App() {
+  return <AuthGate><AuthenticatedApp /></AuthGate>
+}
+
+function AuthenticatedApp() {
+  const { getAccessToken, signOut } = useAuth()
+  const api = useMemo(() => createApiClient({ getAccessToken }), [getAccessToken])
+  const [tenants, setTenants] = useState<TenantMembership[]>([])
+  const [selectedTenantId, setSelectedTenantId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const loadTenants = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const memberships = await api.getTenants()
+      setTenants(memberships)
+      if (memberships.length === 1) setSelectedTenantId(memberships[0].id)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to retrieve your tenant memberships.')
+    } finally {
+      setLoading(false)
+    }
+  }, [api])
+
+  useEffect(() => { void loadTenants() }, [loadTenants])
+
+  if (loading) return <main className="auth-page"><section className="auth-card"><LoaderCircle className="auth-icon spinner" size={32}/><h1>Loading your organizations</h1><p>Checking tenant memberships and permissions…</p></section></main>
+  if (error) return <main className="auth-page"><section className="auth-card"><AlertTriangle className="auth-icon warning" size={30}/><h1>Organizations could not be loaded</h1><p className="form-error">{error}</p><button className="primary full" onClick={() => void loadTenants()}>Try again</button><button className="text-button auth-signout" onClick={signOut}>Sign out</button></section></main>
+  if (tenants.length === 0) return <main className="auth-page"><section className="auth-card"><Users className="auth-icon" size={30}/><h1>No tenant access</h1><p>Your account is authenticated but has no tenant memberships. Ask an administrator to assign access.</p><button className="secondary full" onClick={signOut}>Sign out</button></section></main>
+  if (!selectedTenantId) return <TenantSelection tenants={tenants} onSelect={setSelectedTenantId} onSignOut={signOut}/>
+
+  return <PrototypeApp tenants={tenants} tenantId={selectedTenantId} onTenantChange={setSelectedTenantId}/>
+}
+
+function TenantSelection({ tenants, onSelect, onSignOut }: { tenants: TenantMembership[]; onSelect: (id: string) => void; onSignOut: () => void }) {
+  return <main className="auth-page"><section className="auth-card tenant-card"><div className="auth-brand">S&P</div><h1>Select an organization</h1><p>Choose the tenant you want to administer.</p><div className="tenant-list">{tenants.map(tenant => <button key={tenant.id} onClick={() => onSelect(tenant.id)}><span><b>{tenant.name}</b><small>{tenant.slug}</small></span><span className="badge blue">{tenant.role.replaceAll('_', ' ').toLowerCase()}</span><ArrowRight size={17}/></button>)}</div><button className="text-button auth-signout" onClick={onSignOut}>Sign out</button></section></main>
+}
+
+function PrototypeApp({ tenants, tenantId, onTenantChange }: { tenants: TenantMembership[]; tenantId: string; onTenantChange: (id: string) => void }) {
+  const { getAccessToken, signOut, user } = useAuth()
+  const selectedTenant = tenants.find(tenant => tenant.id === tenantId)!
   const [view, setView] = useState<View>('Dashboard')
   const [toast, setToast] = useState<Toast>(null)
   const [detail, setDetail] = useState<string | null>(null)
@@ -68,7 +113,7 @@ function App() {
   const allowedViews: Record<Persona, View[]> = {
     'Employee': ['Dashboard', 'My Attendance', 'Leave & OD', 'Comp-Off'],
     'Reporting Manager': ['Dashboard', 'Team Approvals', 'My Attendance', 'AI Insights'],
-    'HR Operations Lead': ['Dashboard', 'AI Insights', 'Exception Patterns', 'Processing Periods', 'Data Import Centre', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'Leave & OD', 'Comp-Off', 'Payroll Register', 'Reports', 'Audit Trail'],
+    'HR Operations Lead': ['Dashboard', 'AI Insights', 'Exception Patterns', 'Processing Periods', 'Data Import Centre', 'Employees', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'Leave & OD', 'Comp-Off', 'Payroll Register', 'Reports', 'Audit Trail'],
     'HR Manager': nav.map(item => item.label),
     'VP of HR': ['Dashboard', 'AI Insights', 'Exception Patterns', 'Payroll Register', 'Rule Configuration', 'Reports', 'Audit Trail'],
     'CHRO': ['Dashboard', 'AI Insights', 'Exception Patterns', 'Payroll Register', 'Reports', 'Audit Trail', 'User & Role Management'],
@@ -88,6 +133,7 @@ function App() {
     if (view === 'Team Approvals') return <ManagerApprovals notify={notify} />
     if (view === 'Processing Periods') return <Periods frozen={frozen} setFrozen={setFrozen} runProcessing={runProcessing} notify={notify} />
     if (view === 'Data Import Centre') return <ImportCentre step={importStep} setStep={setImportStep} runProcessing={runProcessing} notify={notify} />
+    if (view === 'Employees') return <EmployeesView getAccessToken={getAccessToken} tenantId={tenantId} />
     if (view === 'Attendance Register') return <AttendanceRegister filter={filter} setFilter={setFilter} open={setDetail} />
     if (view === 'Exception Workbench') return <ExceptionWorkbench notify={notify} />
     if (view === 'Approval Inbox') return <ApprovalInbox notify={notify} />
@@ -98,15 +144,15 @@ function App() {
     if (view === 'User & Role Management') return <UserRoleManagement notify={notify} />
     if (view === 'Integration Settings') return <Integrations notify={notify} />
     return <GenericPage title={view} />
-  }, [view, importStep, processing, processed, filter, frozen, persona])
+  }, [view, importStep, processed, filter, frozen, persona, getAccessToken, tenantId])
 
   return <div className="app">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">S&P</div><div><b>SP Foundation</b><small>Attendance Intelligence</small></div></div>
-      <div className="workspace"><span className="pulse"></span><span>August 2026</span><ChevronDown size={14} /></div>
+      <div className="workspace tenant-workspace"><span className="pulse"></span><select aria-label="Active tenant" value={tenantId} onChange={event => { onTenantChange(event.target.value); setView('Dashboard') }}>{tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select><ChevronDown size={14} /></div>
       <nav>{nav.filter(item => allowedViews[persona].includes(item.label)).map((item, i) => <div key={item.label}>{item.group && <p className="nav-group">{item.group}</p>}<button className={view === item.label ? 'nav-item active' : 'nav-item'} onClick={() => setView(item.label)}><span className="nav-dot">{i + 1}</span>{item.label}{item.label === 'Exception Workbench' && <em>17</em>}</button></div>)}</nav>
       <div className="persona-picker"><Sparkles size={14}/><select aria-label="Active persona" value={persona} onChange={event => { setPersona(event.target.value as Persona); setView('Dashboard') }}>{(['Employee', 'Reporting Manager', 'HR Operations Lead', 'HR Manager', 'VP of HR', 'CHRO'] as Persona[]).map(role => <option key={role}>{role}</option>)}</select></div>
-      <div className="sidebar-bottom"><button className="help"><CircleHelp size={17} /> Help & support</button><div className="user-avatar">{persona === 'Employee' ? 'AK' : persona === 'Reporting Manager' ? 'AP' : persona === 'CHRO' ? 'AS' : persona === 'VP of HR' ? 'RM' : persona === 'HR Operations Lead' ? 'KM' : 'PR'}</div><div className="user-copy"><b>{persona === 'Employee' ? 'Arjun Kumar' : persona === 'Reporting Manager' ? 'Aditi Patel' : persona === 'CHRO' ? 'Anika Sharma' : persona === 'VP of HR' ? 'Rohan Mehta' : persona === 'HR Operations Lead' ? 'Karthik Menon' : 'Priya Raman'}</b><small>{persona}</small></div><MoreHorizontal size={16} /></div>
+      <div className="sidebar-bottom"><button className="help"><CircleHelp size={17} /> Help & support</button><div className="user-avatar">{(user?.email ?? user?.username ?? 'HR').slice(0, 2).toUpperCase()}</div><div className="user-copy"><b>{user?.email ?? user?.username}</b><small>{selectedTenant.role.replaceAll('_', ' ')}</small></div><button className="signout-button" onClick={signOut} title="Sign out"><MoreHorizontal size={16} /></button></div>
     </aside>
     <main>
       <header><div><div className="crumb">Attendance, Absence & Payroll Automation <span>/</span> {view}</div><h1>{view}</h1></div><div className="header-actions"><span className={`api-status ${apiHealth}`}><i></i>{apiHealth === 'ok' ? 'API connected' : apiHealth === 'connecting' ? 'Connecting API' : 'Prototype mode'}</span><button className="icon-button"><Bell size={18} /><i></i></button><button className="period-button"><CalendarDays size={16} /> 01–31 Aug 2026 <ChevronDown size={14} /></button></div></header>

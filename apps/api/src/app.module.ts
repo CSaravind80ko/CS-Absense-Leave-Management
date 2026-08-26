@@ -11,6 +11,7 @@ import { ExceptionsModule } from './exceptions/exceptions.module';
 import { HealthController } from './health/health.controller';
 import { PayrollModule } from './payroll/payroll.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { MeModule } from './me/me.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ExceptionsModule,
     ApprovalsModule,
     PayrollModule,
+    MeModule,
   ],
   controllers: [HealthController],
   providers: [
