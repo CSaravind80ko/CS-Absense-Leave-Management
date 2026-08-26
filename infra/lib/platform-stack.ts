@@ -157,6 +157,8 @@ export class AttendancePlatformStack extends Stack {
             ...props.identityAdminPoolArns,
           ].join(','),
           SAML_ALLOW_INSECURE_LOCALHOST: 'false',
+          API_JSON_BODY_LIMIT: '256kb',
+          SCIM_RATE_LIMIT_PER_MINUTE: '120',
         },
         secrets: {
           DATABASE_USERNAME: ecs.Secret.fromSecretsManager(databaseCredentials, 'username'),
@@ -179,8 +181,10 @@ export class AttendancePlatformStack extends Stack {
         actions: [
           'cognito-idp:AdminCreateUser',
           'cognito-idp:AdminGetUser',
+          'cognito-idp:AdminDeleteUser',
           'cognito-idp:AdminDisableUser',
           'cognito-idp:AdminEnableUser',
+          'cognito-idp:AdminUpdateUserAttributes',
           'cognito-idp:AdminResetUserPassword',
         ],
         resources: [

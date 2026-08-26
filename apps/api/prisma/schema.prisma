@@ -180,6 +180,10 @@ model Tenant {
   payrollItems        PayrollExportItem[]
   auditEvents         AuditEvent[]
   samlConnections     SamlConnection[]
+  scimConnections     ScimProvisioningConnection[]
+  scimUsers           ScimUser[]
+  scimGroups          ScimGroup[]
+  scimCredentials     ScimCredential[]
 }
 
 model TenantMembership {
@@ -198,6 +202,7 @@ model TenantMembership {
   tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   externalIdentities ExternalIdentity[]
   invitations        UserInvitation[]
+  scimUsers           ScimUser[]
 
   @@unique([tenantId, cognitoSubject])
   @@index([cognitoSubject, active])
@@ -228,6 +233,7 @@ model IdentityConnection {
   externalIdentities    ExternalIdentity[]
   userInvitations       UserInvitation[]
   samlConnections       SamlConnection[]
+  scimConnections       ScimProvisioningConnection[]
 
   @@index([status, isDefault])
   @@index([tenantId, status])
@@ -257,6 +263,7 @@ model SamlConnection {
   updatedAt                DateTime             @updatedAt
   tenant                    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   identityConnection       IdentityConnection   @relation(fields: [identityConnectionId], references: [id], onDelete: Restrict)
+  scimConnection           ScimProvisioningConnection?
 
   @@unique([tenantId, identityConnectionId])
   @@unique([identityConnectionId, cognitoProviderName])
@@ -274,11 +281,166 @@ model ExternalIdentity {
   tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tenantMembership   TenantMembership   @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
   connection         IdentityConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  scimUser           ScimUser?
 
   @@unique([connectionId, providerSubject, tenantId])
   @@unique([tenantMembershipId, connectionId])
   @@index([connectionId, providerSubject])
   @@index([tenantId, tenantMembershipId])
+}
+
+model ScimProvisioningConnection {
+  id                   String             @id @default(uuid()) @db.Uuid
+  tenantId             String             @db.Uuid
+  samlConnectionId     String             @unique @db.Uuid
+  identityConnectionId String             @db.Uuid
+  enabled              Boolean            @default(true)
+  defaultRole          ApplicationRole    @default(EMPLOYEE)
+  privilegedRolePolicy Boolean            @default(false)
+  enabledAt            DateTime           @default(now())
+  disabledAt           DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  samlConnection       SamlConnection     @relation(fields: [samlConnectionId], references: [id], onDelete: Restrict)
+  identityConnection   IdentityConnection @relation(fields: [identityConnectionId], references: [id], onDelete: Restrict)
+  credentials          ScimCredential[]
+  users                ScimUser[]
+  groups               ScimGroup[]
+  roleMappings         ScimGroupRoleMapping[]
+  idempotencyRecords   ScimIdempotencyRecord[]
+
+  @@unique([id, tenantId])
+  @@unique([id, tenantId, identityConnectionId])
+  @@index([tenantId, enabled])
+  @@index([identityConnectionId, enabled])
+}
+
+model ScimCredential {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  tokenPrefix              String
+  tokenHash                String
+  tokenSalt                String
+  label                     String
+  expiresAt                 DateTime?
+  lastUsedAt                DateTime?
+  lastUsedIp                String?
+  revokedAt                 DateTime?
+  createdBySubject          String
+  revokedBySubject          String?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  tenant                    Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([provisioningConnectionId, tokenPrefix])
+  @@index([tenantId, provisioningConnectionId, revokedAt])
+  @@index([expiresAt])
+}
+
+model ScimUser {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  tenantMembershipId       String                     @db.Uuid
+  externalIdentityId       String                     @unique @db.Uuid
+  externalId               String?
+  userName                 String
+  normalizedUserName       String
+  givenName                String?
+  familyName               String?
+  formattedName            String?
+  emails                   Json
+  primaryEmail             String?
+  active                   Boolean                    @default(true)
+  deletedAt                DateTime?
+  version                  Int                        @default(1)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  tenant                   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  tenantMembership         TenantMembership           @relation(fields: [tenantMembershipId], references: [id], onDelete: Restrict)
+  externalIdentity         ExternalIdentity           @relation(fields: [externalIdentityId], references: [id], onDelete: Restrict)
+  groupMemberships         ScimGroupMember[]
+
+  @@unique([id, tenantId, provisioningConnectionId])
+  @@unique([provisioningConnectionId, normalizedUserName])
+  @@unique([provisioningConnectionId, externalId])
+  @@unique([provisioningConnectionId, tenantMembershipId])
+  @@index([tenantId, provisioningConnectionId, active])
+  @@index([tenantMembershipId])
+}
+
+model ScimGroup {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  externalId               String?
+  displayName              String
+  normalizedDisplayName    String
+  version                  Int                        @default(1)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  tenant                   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  members                  ScimGroupMember[]
+  roleMapping              ScimGroupRoleMapping?
+
+  @@unique([id, tenantId, provisioningConnectionId])
+  @@unique([provisioningConnectionId, normalizedDisplayName])
+  @@unique([provisioningConnectionId, externalId])
+  @@index([tenantId, provisioningConnectionId])
+}
+
+model ScimGroupMember {
+  tenantId                 String     @db.Uuid
+  provisioningConnectionId String     @db.Uuid
+  groupId                  String     @db.Uuid
+  userId                   String     @db.Uuid
+  createdAt                DateTime   @default(now())
+  group                    ScimGroup  @relation(fields: [groupId, tenantId, provisioningConnectionId], references: [id, tenantId, provisioningConnectionId], onDelete: Cascade)
+  user                     ScimUser   @relation(fields: [userId, tenantId, provisioningConnectionId], references: [id, tenantId, provisioningConnectionId], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([tenantId, provisioningConnectionId, userId])
+}
+
+model ScimGroupRoleMapping {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  groupId                  String                     @unique @db.Uuid
+  role                     ApplicationRole
+  privilegedConfirmedAt    DateTime?
+  privilegedConfirmedBy    String?
+  createdBySubject         String
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  group                    ScimGroup                  @relation(fields: [groupId, tenantId, provisioningConnectionId], references: [id, tenantId, provisioningConnectionId], onDelete: Cascade)
+
+  @@unique([groupId, tenantId, provisioningConnectionId])
+  @@index([tenantId, provisioningConnectionId, role])
+}
+
+model ScimIdempotencyRecord {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  idempotencyKey           String
+  requestHash              String
+  method                   String
+  requestPath              String
+  responseStatus           Int
+  responseBody             Json
+  expiresAt                DateTime
+  createdAt                DateTime                   @default(now())
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([provisioningConnectionId, idempotencyKey])
+  @@index([expiresAt])
 }
 
 model UserInvitation {

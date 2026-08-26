@@ -131,6 +131,63 @@ export interface SamlConnection {
   updatedAt: string
 }
 
+export interface ScimCredentialSummary {
+  id: string
+  tokenPrefix: string
+  label: string
+  createdAt: string
+  expiresAt: string | null
+  lastUsedAt: string | null
+  revokedAt: string | null
+}
+
+export interface ScimAdminConnection {
+  samlConnectionId: string
+  providerName: string
+  samlStatus: SamlConnectionStatus
+  identityStatus: 'ACTIVE' | 'DISABLED'
+  identityType: 'SHARED_COGNITO' | 'DEDICATED_COGNITO'
+  eligible: boolean
+  baseUrl: string
+  provisioning: {
+    id: string
+    enabled: boolean
+    defaultRole: ApplicationRole
+    privilegedRolePolicy: boolean
+    enabledAt: string
+    disabledAt: string | null
+    credentials: ScimCredentialSummary[]
+    _count: { users: number; groups: number }
+  } | null
+}
+
+export interface ScimCredentialIssue {
+  credential: ScimCredentialSummary
+  token: string
+  baseUrl: string
+}
+
+export interface ScimAdminGroup {
+  id: string
+  displayName: string
+  externalId: string | null
+  _count: { members: number }
+  roleMapping: {
+    role: ApplicationRole
+    privilegedConfirmedAt: string | null
+    updatedAt: string
+  } | null
+}
+
+export interface ScimAuditEvent {
+  id: string
+  action: string
+  entityType: string
+  entityId: string | null
+  occurredAt: string
+  metadata: Record<string, unknown> | null
+}
+
 export interface Employee {
   id: string
   employeeNumber: string
@@ -248,6 +305,60 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       request<SamlConnection>(`/saml-connections/${id}/activate`, { method: 'POST' }),
     disableSamlConnection: (id: string) =>
       request<SamlConnection>(`/saml-connections/${id}/disable`, { method: 'POST' }),
+    getScimConnections: () => request<ScimAdminConnection[]>('/scim-admin'),
+    enableScim: (samlConnectionId: string, defaultRole: ApplicationRole) =>
+      request<ScimAdminConnection['provisioning']>(`/scim-admin/${samlConnectionId}/enable`, {
+        method: 'POST',
+        body: JSON.stringify({ defaultRole }),
+      }),
+    disableScim: (samlConnectionId: string) =>
+      request<void>(`/scim-admin/${samlConnectionId}/disable`, { method: 'POST' }),
+    issueScimCredential: (
+      samlConnectionId: string,
+      input: { label: string; expiresAt?: string },
+    ) => request<ScimCredentialIssue>(`/scim-admin/${samlConnectionId}/credentials`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    rotateScimCredential: (
+      samlConnectionId: string,
+      input: { label: string; expiresAt?: string },
+    ) => request<ScimCredentialIssue>(`/scim-admin/${samlConnectionId}/credentials/rotate`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    revokeScimCredential: (samlConnectionId: string, credentialId: string) =>
+      request<void>(`/scim-admin/${samlConnectionId}/credentials/${credentialId}`, {
+        method: 'DELETE',
+      }),
+    updateScimSettings: (
+      samlConnectionId: string,
+      input: {
+        defaultRole: ApplicationRole
+        privilegedRolePolicy: boolean
+        confirmPrivilegedAccess?: boolean
+      },
+    ) => request(`/scim-admin/${samlConnectionId}/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+    getScimGroups: (samlConnectionId: string) =>
+      request<ScimAdminGroup[]>(`/scim-admin/${samlConnectionId}/groups`),
+    mapScimGroupRole: (
+      samlConnectionId: string,
+      groupId: string,
+      role: ApplicationRole,
+      confirmPrivilegedAccess = false,
+    ) => request(`/scim-admin/${samlConnectionId}/groups/${groupId}/role-mapping`, {
+      method: 'PUT',
+      body: JSON.stringify({ role, confirmPrivilegedAccess }),
+    }),
+    removeScimGroupRole: (samlConnectionId: string, groupId: string) =>
+      request<void>(`/scim-admin/${samlConnectionId}/groups/${groupId}/role-mapping`, {
+        method: 'DELETE',
+      }),
+    getScimEvents: (samlConnectionId: string) =>
+      request<ScimAuditEvent[]>(`/scim-admin/${samlConnectionId}/events`),
   }
 }
 
