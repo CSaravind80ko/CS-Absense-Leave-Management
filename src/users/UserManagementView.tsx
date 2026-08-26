@@ -6,6 +6,7 @@ import {
   type ApplicationRole,
   type TenantUser,
 } from '../lib/api'
+import { SamlOnboarding } from './SamlOnboarding'
 
 interface UserManagementViewProps {
   getAccessToken: () => Promise<string>
@@ -73,6 +74,7 @@ export function UserManagementView({
 
   return <>
     <div className="page-top"><p>Invite local Cognito users and administer tenant-scoped roles, MFA policy, and access lifecycle.</p><button className="primary" onClick={() => setInviting(true)}><MailPlus size={16}/> Invite user</button></div>
+    <SamlOnboarding api={api}/>
     {error && <div className="state-banner error" role="alert"><AlertTriangle size={18}/><div><b>User management action failed</b><p>{error}</p></div><button className="secondary small" onClick={() => void load()}><RefreshCw size={14}/> Retry</button></div>}
     {loading ? <section className="panel empty-state"><LoaderCircle className="spinner" size={30}/><h2>Loading tenant users</h2><p>Retrieving membership and Cognito MFA state…</p></section>
       : <section className="panel table-panel user-table"><div className="panel-head"><div><h2>Users and roles</h2><p>Cognito credentials stay server-side; TOTP secrets are never returned.</p></div><span className="badge green">{users.filter(user => user.active).length} active</span></div>

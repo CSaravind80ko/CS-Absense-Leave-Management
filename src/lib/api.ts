@@ -60,6 +60,77 @@ export interface InviteTenantUserInput {
   mfaRequired: boolean
 }
 
+export type SamlConnectionStatus =
+  | 'DRAFT'
+  | 'METADATA_VALID'
+  | 'PROVISIONING'
+  | 'READY'
+  | 'ACTIVE'
+  | 'DISABLED'
+  | 'ERROR'
+
+export interface SamlIdentityConnection {
+  id: string
+  type: 'SHARED_COGNITO' | 'DEDICATED_COGNITO'
+  status: 'ACTIVE' | 'DISABLED'
+  issuer: string
+  clientId: string
+  cognitoUserPoolId: string
+  awsRegion: string
+  mfaPolicy: 'OPTIONAL' | 'REQUIRED'
+  discoverySlug: string | null
+  verifiedDomains: string[]
+}
+
+export interface SamlCertificateDetails {
+  fingerprintSha256: string
+  subject?: string
+  issuer?: string
+  serialNumber?: string
+  validFrom?: string
+  validTo?: string
+  validityState: 'VALID' | 'NOT_YET_VALID' | 'EXPIRED'
+}
+
+export interface SamlReadinessResult {
+  providerConfigured: boolean
+  providerEnabled: boolean
+  message: string
+  providerHint?: string
+  managedLoginUrl?: string
+  finalAuthenticationConfirmed?: false
+}
+
+export interface SamlTestResult extends SamlReadinessResult {
+  providerConfigured: true
+  providerEnabled: true
+  providerHint: string
+  managedLoginUrl: string
+  finalAuthenticationConfirmed: false
+}
+
+export interface SamlConnection {
+  id: string
+  identityConnectionId: string
+  entityId: string | null
+  metadataUrl: string | null
+  certificateFingerprints: string[]
+  certificateDetails: SamlCertificateDetails[] | null
+  cognitoProviderName: string
+  attributeMapping: Record<string, string>
+  status: SamlConnectionStatus
+  metadataValidatedAt: string | null
+  provisionedAt: string | null
+  testedAt: string | null
+  activatedAt: string | null
+  disabledAt: string | null
+  testResult: SamlReadinessResult | null
+  lastErrorCode: string | null
+  lastErrorMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Employee {
   id: string
   employeeNumber: string
@@ -151,6 +222,32 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
     enableTenantUser: (id: string) => request(`/tenant-users/${id}/enable`, { method: 'POST' }),
     resendTenantUserInvitation: (id: string) => request(`/tenant-users/${id}/resend-invitation`, { method: 'POST' }),
     resetTenantUserPassword: (id: string) => request(`/tenant-users/${id}/reset-password`, { method: 'POST' }),
+    getSamlConnections: () => request<SamlConnection[]>('/saml-connections'),
+    getSamlIdentityConnections: () =>
+      request<SamlIdentityConnection[]>('/saml-connections/identity-connections'),
+    createSamlConnection: (input: {
+      identityConnectionId: string
+      cognitoProviderName: string
+      attributeMapping?: Record<string, string>
+    }) => request<SamlConnection>('/saml-connections', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    updateSamlMetadata: (
+      id: string,
+      input: { metadataUrl: string } | { metadataXml: string },
+    ) => request<SamlConnection>(`/saml-connections/${id}/metadata`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+    provisionSamlConnection: (id: string) =>
+      request<SamlConnection>(`/saml-connections/${id}/provision`, { method: 'POST' }),
+    testSamlConnection: (id: string) =>
+      request<SamlTestResult>(`/saml-connections/${id}/test`, { method: 'POST' }),
+    activateSamlConnection: (id: string) =>
+      request<SamlConnection>(`/saml-connections/${id}/activate`, { method: 'POST' }),
+    disableSamlConnection: (id: string) =>
+      request<SamlConnection>(`/saml-connections/${id}/disable`, { method: 'POST' }),
   }
 }
 

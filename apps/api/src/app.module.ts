@@ -16,6 +16,7 @@ import { PayrollModule } from './payroll/payroll.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { MeModule } from './me/me.module';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
+import { SamlConnectionsModule } from './saml-connections/saml-connections.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { TenantUsersModule } from './tenant-users/tenant-users.module';
     PayrollModule,
     MeModule,
     TenantUsersModule,
+    SamlConnectionsModule,
   ],
   controllers: [HealthController, IdentityDiscoveryController],
   providers: [

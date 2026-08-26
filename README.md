@@ -76,11 +76,57 @@ The shared pool has managed login, a public Authorization Code client suitable f
 npm run synth --workspace @attendance/infra -- --context stage=dev --context identityDomainPrefix=attendance-dev-123456789012 --context 'identityCallbackUrls=["http://localhost:5173"]' --context 'identityLogoutUrls=["http://localhost:5173"]'
 ```
 
-`CognitoOidcConnection` is the reusable construct for future dedicated enterprise pools. This layer does not instantiate tenant-specific pools or implement SAML/SCIM.
+`CognitoOidcConnection` is the reusable construct for dedicated enterprise pools. Tenant SAML onboarding does not create pools dynamically: create the pool, managed-login domain, public app client, and disabled `IdentityConnection` first. Add every dedicated pool ARN to `identityAdminPoolArns` before activation. This keeps Cognito administration resource-scoped; production IAM must never use `*`.
+
+## Enterprise SAML onboarding
+
+Tenant administrators configure SAML from **User & Role Management**. The lifecycle is deliberately explicit:
+
+1. Select a pre-provisioned dedicated connection or an approved shared pool, then save an HTTPS metadata URL or XML upload.
+2. Validate the entity ID, SSO endpoint, and signing certificates. XML metadata is size-limited, rejects DTDs/external entities, and is stored only in the encrypted private SAML metadata bucket. PostgreSQL retains an opaque object reference and non-sensitive fingerprints.
+3. Provision the Cognito SAML identity provider and update the existing app client's supported providers. A failed app-client update compensates the provider change and leaves the configuration in `ERROR`.
+4. Run the connection test. It verifies Cognito's provider and app-client configuration and returns a Managed Login test URL. The test is only configuration readiness; successful upstream authentication is confirmed after the browser completes the IdP and Cognito callback.
+5. Activate the configuration. A dedicated `IdentityConnection` becomes `ACTIVE` only after AWS provisioning and test readiness. Shared-pool connections remain shared and must be listed in `SAML_SHARED_POOL_IDS`.
+
+The API accepts metadata only over HTTPS and revalidates every redirect and resolved address to prevent SSRF. Loopback, private, link-local, carrier-grade NAT, reserved, and instance-metadata addresses are blocked. `SAML_ALLOW_INSECURE_LOCALHOST=true` is a non-production-only escape hatch for local IdP testing.
+
+All SAML routes require a verified `TENANT_ADMIN` membership and `X-Tenant-Id`:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/v1/saml-connections` | List non-sensitive tenant configuration and status |
+| `GET /api/v1/saml-connections/identity-connections` | List eligible pre-provisioned Cognito connections |
+| `POST /api/v1/saml-connections` | Create or safely revise a draft |
+| `PUT /api/v1/saml-connections/:id/metadata` | Fetch/upload and strictly validate metadata |
+| `POST /api/v1/saml-connections/:id/provision` | Reconcile the Cognito IdP and app client |
+| `POST /api/v1/saml-connections/:id/test` | Verify AWS configuration and return a Managed Login test URL |
+| `POST /api/v1/saml-connections/:id/activate` | Activate routing after a successful configuration test |
+| `POST /api/v1/saml-connections/:id/disable` | Remove app-client access and disable routing |
+
+### Identity provider setup
+
+In all providers, use the Cognito user-pool SAML service-provider values:
+
+- **ACS / Reply URL:** `https://<managed-login-domain>/saml2/idpresponse`
+- **Audience / Entity ID:** `urn:amazon:cognito:sp:<user-pool-id>`
+- **Name ID:** persistent or email format backed by an immutable directory identifier where possible
+- **Required claim:** map the IdP email attribute to Cognito `email`; add `given_name` and `family_name` only when the upstream directory releases them
+
+For **Microsoft Entra ID**, create a non-gallery enterprise application, configure SAML single sign-on with the Cognito ACS and audience, assign only intended users/groups, download Federation Metadata XML, and upload it or use its HTTPS App Federation Metadata URL.
+
+For **Okta**, create a SAML 2.0 app integration, set Single sign-on URL to the Cognito ACS, Audience URI to the Cognito entity ID, configure the email attribute statement, assign intended users/groups, and use the IdP metadata URL.
+
+For a **generic SAML 2.0 IdP**, require signed assertions or responses, publish at least one valid X.509 signing certificate, and expose an HTTP-Redirect or HTTP-POST SSO service over HTTPS. Certificate rotation should publish overlapping current and next signing certificates before removing the old one.
+
+SAML onboarding does not provision users or groups. SCIM belongs to Layer 3 and must consume the activated connection/configuration contracts without changing the immutable `(connectionId, providerSubject)` identity key.
+
+### Layer 3 SCIM handoff
+
+SCIM must consume only an `ACTIVE` `SamlConnection` and its linked `ACTIVE` `IdentityConnection`. It must preserve the connection's exact Cognito issuer/client and tenant routing, create or locate a tenant membership, and create an immutable `ExternalIdentity` keyed by `(connectionId, verified Cognito sub)`. Email, domain, SAML NameID, and custom claims are attributes, never authorization keys. `providerUsername` remains the separate Cognito administrative username. SCIM must not read raw SAML metadata, certificate material, AWS secrets, or the opaque metadata object reference, and must not reactivate a disabled SAML or identity connection.
 
 ## Tenant user and role administration
 
-`TENANT_ADMIN` members can use the User & Role Management screen and `/api/v1/tenant-users` APIs to:
+`TENANT_ADMIN` members can use the User & Role Management screen and `/api/v1/tenant-users` and `/api/v1/saml-connections` APIs to:
 
 - invite local email/password users into the correct dedicated pool or default shared pool;
 - assign application roles and tenant-scoped access;

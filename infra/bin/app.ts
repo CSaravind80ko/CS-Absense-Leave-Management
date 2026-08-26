@@ -24,6 +24,15 @@ function stringListContext(name: string): string[] | undefined {
 
 const callbackUrls = stringListContext('identityCallbackUrls')
 const logoutUrls = stringListContext('identityLogoutUrls')
+const identityAdminPoolArns = stringListContext('identityAdminPoolArns') ?? []
+
+if (identityAdminPoolArns.some(arn =>
+  !/^arn:(?:aws|aws-us-gov|aws-cn|aws-iso|aws-iso-b):cognito-idp:[a-z0-9-]+:\d{12}:userpool\/[A-Za-z0-9_-]+$/.test(arn),
+)) {
+  throw new Error(
+    'identityAdminPoolArns must contain exact Cognito user-pool ARNs; wildcards are not allowed',
+  )
+}
 
 if (stage === 'prod' && (!callbackUrls?.length || !logoutUrls?.length)) {
   throw new Error(
@@ -38,8 +47,7 @@ new AttendancePlatformStack(app, `AttendancePlatform-${stage}`, {
   identityDomainPrefix:
     app.node.tryGetContext('identityDomainPrefix') ??
     `attendance-${stage}-${process.env.CDK_DEFAULT_ACCOUNT ?? 'local'}`,
-  identityAdminPoolArns:
-    stringListContext('identityAdminPoolArns') ?? [],
+  identityAdminPoolArns,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION ?? 'ap-south-1',
