@@ -1,0 +1,484 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ApplicationRole {
+  TENANT_ADMIN
+  HR_ADMIN
+  MANAGER
+  PAYROLL_ADMIN
+  EMPLOYEE
+  AUDITOR
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
+enum PeriodStatus {
+  OPEN
+  PROCESSING
+  REVIEW
+  APPROVED
+  EXPORTED
+  CLOSED
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum RowStatus {
+  PENDING
+  VALID
+  INVALID
+  PROCESSED
+}
+
+enum PunchType {
+  IN
+  OUT
+  BREAK_START
+  BREAK_END
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  PARTIAL
+  LEAVE
+  HOLIDAY
+  WEEKEND
+}
+
+enum ExceptionType {
+  MISSING_PUNCH
+  LATE_ARRIVAL
+  EARLY_DEPARTURE
+  OVERTIME
+  ABSENCE
+  DUPLICATE_PUNCH
+  OUT_OF_LOCATION
+  OTHER
+}
+
+enum ExceptionStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum ApprovalType {
+  ATTENDANCE_PERIOD
+  EXCEPTION
+  PAYROLL_EXPORT
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalActionType {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  COMMENTED
+  CANCELLED
+}
+
+enum PayrollExportStatus {
+  DRAFT
+  GENERATING
+  READY
+  FAILED
+  DELIVERED
+}
+
+model Tenant {
+  id               String                 @id @default(uuid()) @db.Uuid
+  name             String
+  slug             String                 @unique
+  status           TenantStatus           @default(ACTIVE)
+  timezone         String                 @default("UTC")
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  memberships      TenantMembership[]
+  departments      Department[]
+  locations        Location[]
+  shifts           Shift[]
+  employees        Employee[]
+  periods          ProcessingPeriod[]
+  importJobs       AttendanceImportJob[]
+  importFiles      AttendanceImportFile[]
+  importRows       AttendanceImportRow[]
+  punches          AttendancePunch[]
+  attendanceDays   AttendanceDay[]
+  exceptions       AttendanceException[]
+  approvalRequests ApprovalRequest[]
+  approvalActions  ApprovalAction[]
+  payrollExports   PayrollExport[]
+  payrollItems     PayrollExportItem[]
+  auditEvents      AuditEvent[]
+}
+
+model TenantMembership {
+  id             String          @id @default(uuid()) @db.Uuid
+  tenantId       String          @db.Uuid
+  cognitoSubject String
+  email          String?
+  role           ApplicationRole
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, cognitoSubject])
+  @@index([cognitoSubject, active])
+  @@index([tenantId, role])
+}
+
+model Department {
+  id        String     @id @default(uuid()) @db.Uuid
+  tenantId  String     @db.Uuid
+  name      String
+  code      String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employees Employee[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, name])
+}
+
+model Location {
+  id        String            @id @default(uuid()) @db.Uuid
+  tenantId  String            @db.Uuid
+  name      String
+  code      String
+  timezone  String
+  address   String?
+  latitude  Decimal?          @db.Decimal(9, 6)
+  longitude Decimal?          @db.Decimal(9, 6)
+  radiusM   Int?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employees Employee[]
+  shifts    Shift[]
+  punches   AttendancePunch[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, name])
+}
+
+model Shift {
+  id              String     @id @default(uuid()) @db.Uuid
+  tenantId        String     @db.Uuid
+  locationId      String?    @db.Uuid
+  name            String
+  code            String
+  startMinutes    Int
+  endMinutes      Int
+  breakMinutes    Int        @default(0)
+  graceMinutes    Int        @default(0)
+  crossesMidnight Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  tenant          Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location        Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  employees       Employee[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, locationId])
+}
+
+model Employee {
+  id              String                @id @default(uuid()) @db.Uuid
+  tenantId        String                @db.Uuid
+  employeeNumber  String
+  cognitoSubject  String?
+  firstName       String
+  lastName        String
+  email           String?
+  departmentId    String?               @db.Uuid
+  locationId      String?               @db.Uuid
+  shiftId         String?               @db.Uuid
+  status          EmployeeStatus        @default(ACTIVE)
+  hireDate        DateTime?             @db.Date
+  terminationDate DateTime?             @db.Date
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department      Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  location        Location?             @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  shift           Shift?                @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  punches         AttendancePunch[]
+  attendanceDays  AttendanceDay[]
+  exceptions      AttendanceException[]
+  payrollItems    PayrollExportItem[]
+
+  @@unique([tenantId, employeeNumber])
+  @@unique([tenantId, cognitoSubject])
+  @@index([tenantId, status])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, locationId])
+}
+
+model ProcessingPeriod {
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @db.Uuid
+  name             String
+  startsOn         DateTime              @db.Date
+  endsOn           DateTime              @db.Date
+  status           PeriodStatus          @default(OPEN)
+  lockedAt         DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  importJobs       AttendanceImportJob[]
+  attendanceDays   AttendanceDay[]
+  approvalRequests ApprovalRequest[]
+  payrollExports   PayrollExport[]
+
+  @@unique([tenantId, startsOn, endsOn])
+  @@index([tenantId, status])
+}
+
+model AttendanceImportJob {
+  id           String                 @id @default(uuid()) @db.Uuid
+  tenantId     String                 @db.Uuid
+  periodId     String                 @db.Uuid
+  requestedBy  String
+  source       String
+  status       ImportStatus           @default(PENDING)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  errorMessage String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period       ProcessingPeriod       @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  files        AttendanceImportFile[]
+
+  @@index([tenantId, periodId, status])
+  @@index([tenantId, createdAt])
+}
+
+model AttendanceImportFile {
+  id          String                @id @default(uuid()) @db.Uuid
+  tenantId    String                @db.Uuid
+  importJobId String                @db.Uuid
+  fileName    String
+  storageKey  String
+  contentType String
+  sizeBytes   BigInt
+  checksum    String
+  createdAt   DateTime              @default(now())
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  importJob   AttendanceImportJob   @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  rows        AttendanceImportRow[]
+
+  @@unique([tenantId, storageKey])
+  @@index([tenantId, importJobId])
+}
+
+model AttendanceImportRow {
+  id              String               @id @default(uuid()) @db.Uuid
+  tenantId        String               @db.Uuid
+  fileId          String               @db.Uuid
+  rowNumber       Int
+  rawData         Json
+  status          RowStatus            @default(PENDING)
+  validationError String?
+  createdAt       DateTime             @default(now())
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  file            AttendanceImportFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  punches         AttendancePunch[]
+
+  @@unique([tenantId, fileId, rowNumber])
+  @@index([tenantId, status])
+}
+
+model AttendancePunch {
+  id          String               @id @default(uuid()) @db.Uuid
+  tenantId    String               @db.Uuid
+  employeeId  String               @db.Uuid
+  importRowId String?              @db.Uuid
+  locationId  String?              @db.Uuid
+  occurredAt  DateTime
+  type        PunchType
+  source      String
+  externalId  String?
+  metadata    Json?
+  createdAt   DateTime             @default(now())
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee    Employee             @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  importRow   AttendanceImportRow? @relation(fields: [importRowId], references: [id], onDelete: SetNull)
+  location    Location?            @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, source, externalId])
+  @@index([tenantId, employeeId, occurredAt])
+  @@index([tenantId, importRowId])
+}
+
+model AttendanceDay {
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @db.Uuid
+  periodId         String                @db.Uuid
+  employeeId       String                @db.Uuid
+  workDate         DateTime              @db.Date
+  status           AttendanceStatus
+  scheduledMinutes Int                   @default(0)
+  workedMinutes    Int                   @default(0)
+  overtimeMinutes  Int                   @default(0)
+  lateMinutes      Int                   @default(0)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period           ProcessingPeriod      @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  employee         Employee              @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  exceptions       AttendanceException[]
+
+  @@unique([tenantId, employeeId, workDate])
+  @@index([tenantId, periodId])
+  @@index([tenantId, status])
+}
+
+model AttendanceException {
+  id               String            @id @default(uuid()) @db.Uuid
+  tenantId         String            @db.Uuid
+  attendanceDayId  String?           @db.Uuid
+  employeeId       String            @db.Uuid
+  type             ExceptionType
+  status           ExceptionStatus   @default(OPEN)
+  details          Json?
+  resolutionNote   String?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  attendanceDay    AttendanceDay?    @relation(fields: [attendanceDayId], references: [id], onDelete: SetNull)
+  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  approvalRequests ApprovalRequest[]
+
+  @@index([tenantId, status, type])
+  @@index([tenantId, employeeId, createdAt])
+}
+
+model ApprovalRequest {
+  id             String               @id @default(uuid()) @db.Uuid
+  tenantId       String               @db.Uuid
+  type           ApprovalType
+  status         ApprovalStatus       @default(PENDING)
+  periodId       String?              @db.Uuid
+  exceptionId    String?              @db.Uuid
+  requestedBy    String
+  currentStep    Int                  @default(1)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  tenant         Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period         ProcessingPeriod?    @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  exception      AttendanceException? @relation(fields: [exceptionId], references: [id], onDelete: Restrict)
+  actions        ApprovalAction[]
+  payrollExports PayrollExport[]
+
+  @@index([tenantId, status, type])
+  @@index([tenantId, periodId])
+  @@index([tenantId, exceptionId])
+}
+
+model ApprovalAction {
+  id                String             @id @default(uuid()) @db.Uuid
+  tenantId          String             @db.Uuid
+  approvalRequestId String             @db.Uuid
+  action            ApprovalActionType
+  actorSubject      String
+  comment           String?
+  createdAt         DateTime           @default(now())
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  approvalRequest   ApprovalRequest    @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, approvalRequestId, createdAt])
+  @@index([tenantId, actorSubject])
+}
+
+model PayrollExport {
+  id                String              @id @default(uuid()) @db.Uuid
+  tenantId          String              @db.Uuid
+  periodId          String              @db.Uuid
+  approvalRequestId String?             @db.Uuid
+  format            String
+  status            PayrollExportStatus @default(DRAFT)
+  storageKey        String?
+  checksum          String?
+  requestedBy       String
+  generatedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period            ProcessingPeriod    @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  approvalRequest   ApprovalRequest?    @relation(fields: [approvalRequestId], references: [id], onDelete: Restrict)
+  items             PayrollExportItem[]
+
+  @@unique([tenantId, storageKey])
+  @@index([tenantId, periodId, status])
+}
+
+model PayrollExportItem {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  payrollExportId String        @db.Uuid
+  employeeId      String        @db.Uuid
+  regularMinutes  Int
+  overtimeMinutes Int
+  unpaidMinutes   Int           @default(0)
+  grossAmount     Decimal?      @db.Decimal(14, 2)
+  payload         Json?
+  createdAt       DateTime      @default(now())
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payrollExport   PayrollExport @relation(fields: [payrollExportId], references: [id], onDelete: Cascade)
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, payrollExportId, employeeId])
+  @@index([tenantId, employeeId])
+}
+
+model AuditEvent {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  actorSubject String
+  action       String
+  entityType   String
+  entityId     String?
+  occurredAt   DateTime @default(now())
+  requestId    String?
+  ipAddress    String?
+  before       Json?
+  after        Json?
+  metadata     Json?
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, actorSubject, occurredAt])
+}
