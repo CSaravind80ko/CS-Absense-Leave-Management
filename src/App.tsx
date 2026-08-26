@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle, ArrowRight, Bell, CalendarDays, CheckCircle2, ChevronDown,
   CircleHelp, Clock3, Download, FileUp, Filter, MoreHorizontal, Play,
   Plus, Search, Settings2, ShieldCheck, Sparkles, Upload, Users, X,
 } from 'lucide-react'
 import './App.css'
+import { getApiHealth, type ApiHealth } from './lib/api'
 
 type View = 'Dashboard' | 'AI Insights' | 'Exception Patterns' | 'My Attendance' | 'Team Approvals' | 'Processing Periods' | 'Data Import Centre' | 'Attendance Register' | 'Exception Workbench' | 'Approval Inbox' | 'Leave & OD' | 'Comp-Off' | 'Payroll Register' | 'Rule Configuration' | 'User & Role Management' | 'Integration Settings' | 'Reports' | 'Audit Trail'
 type Toast = { message: string; kind?: 'success' | 'warning' } | null
@@ -56,6 +57,14 @@ function App() {
   const [ruleOpen, setRuleOpen] = useState(false)
   const [showWalkthrough, setShowWalkthrough] = useState(false)
   const [persona, setPersona] = useState<Persona>('HR Manager')
+  const [apiHealth, setApiHealth] = useState<ApiHealth['status'] | 'connecting'>('connecting')
+  useEffect(() => {
+    const controller = new AbortController()
+    getApiHealth(controller.signal)
+      .then(health => setApiHealth(health.status))
+      .catch(() => setApiHealth('unavailable'))
+    return () => controller.abort()
+  }, [])
   const allowedViews: Record<Persona, View[]> = {
     'Employee': ['Dashboard', 'My Attendance', 'Leave & OD', 'Comp-Off'],
     'Reporting Manager': ['Dashboard', 'Team Approvals', 'My Attendance', 'AI Insights'],
@@ -100,7 +109,7 @@ function App() {
       <div className="sidebar-bottom"><button className="help"><CircleHelp size={17} /> Help & support</button><div className="user-avatar">{persona === 'Employee' ? 'AK' : persona === 'Reporting Manager' ? 'AP' : persona === 'CHRO' ? 'AS' : persona === 'VP of HR' ? 'RM' : persona === 'HR Operations Lead' ? 'KM' : 'PR'}</div><div className="user-copy"><b>{persona === 'Employee' ? 'Arjun Kumar' : persona === 'Reporting Manager' ? 'Aditi Patel' : persona === 'CHRO' ? 'Anika Sharma' : persona === 'VP of HR' ? 'Rohan Mehta' : persona === 'HR Operations Lead' ? 'Karthik Menon' : 'Priya Raman'}</b><small>{persona}</small></div><MoreHorizontal size={16} /></div>
     </aside>
     <main>
-      <header><div><div className="crumb">Attendance, Absence & Payroll Automation <span>/</span> {view}</div><h1>{view}</h1></div><div className="header-actions"><button className="icon-button"><Bell size={18} /><i></i></button><button className="period-button"><CalendarDays size={16} /> 01–31 Aug 2026 <ChevronDown size={14} /></button></div></header>
+      <header><div><div className="crumb">Attendance, Absence & Payroll Automation <span>/</span> {view}</div><h1>{view}</h1></div><div className="header-actions"><span className={`api-status ${apiHealth}`}><i></i>{apiHealth === 'ok' ? 'API connected' : apiHealth === 'connecting' ? 'Connecting API' : 'Prototype mode'}</span><button className="icon-button"><Bell size={18} /><i></i></button><button className="period-button"><CalendarDays size={16} /> 01–31 Aug 2026 <ChevronDown size={14} /></button></div></header>
       <section className="content">{content}</section>
     </main>
     {processing && <ProcessingOverlay />}

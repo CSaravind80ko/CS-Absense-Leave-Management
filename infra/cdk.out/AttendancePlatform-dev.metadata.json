@@ -1,0 +1,1174 @@
+{
+  "/AttendancePlatform-dev": [
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Custom::S3AutoDeleteObjectsCustomResourceProvider": [
+    {
+      "type": "aws:cdk:is-custom-resource-handler-customResourceProvider",
+      "data": true
+    }
+  ],
+  "/AttendancePlatform-dev/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C": [
+    {
+      "type": "aws:cdk:is-custom-resource-handler-singleton",
+      "data": true
+    },
+    {
+      "type": "aws:cdk:is-custom-resource-handler-runtime-family",
+      "data": 2
+    }
+  ],
+  "/AttendancePlatform-dev/ApplicationUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApplicationUrl"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:205:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/DatabaseEndpoint": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseEndpoint"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:206:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/ImportBucketName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImportBucketName"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:207:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/WebBucketName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WebBucketName"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:208:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/UserPoolId": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "UserPoolId"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:209:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/UserPoolClientId": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "UserPoolClientId"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:210:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Vpc8378EB38"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIGWD7BA715C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcVPCGWBF912B6E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/DatabaseCredentials/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseCredentials8547B3E7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Secret2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:43:33)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Database/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseB269D8BB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new DatabaseInstance2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:51:22)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/UserPool/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "UserPool6BA7E5F2"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new UserPool2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:71:22)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/ImportBucket/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImportBucketBAF3A8E9"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Bucket2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:98:26)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    },
+    {
+      "type": "aws:cdk:analytics:mixin",
+      "data": {
+        "mixin": "aws-cdk-lib.aws_s3.mixins.BucketAutoDeleteObjects"
+      }
+    }
+  ],
+  "/AttendancePlatform-dev/Custom::S3AutoDeleteObjectsCustomResourceProvider/Role": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/WebBucket/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WebBucket12880F5B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Bucket2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:107:23)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    },
+    {
+      "type": "aws:cdk:analytics:mixin",
+      "data": {
+        "mixin": "aws-cdk-lib.aws_s3.mixins.BucketAutoDeleteObjects"
+      }
+    }
+  ],
+  "/AttendancePlatform-dev/ProcessingDeadLetterQueue/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ProcessingDeadLetterQueueE13B1352"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Queue2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:120:16)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/ProcessingQueue/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ProcessingQueue6DC600C3"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Queue2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:115:29)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Cluster/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ClusterEB0386A7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Cluster2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:127:21)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/LoadBalancerDNS": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiLoadBalancerDNSB0038DD0"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/ServiceURL": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceURL135D4FCA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/WebDistribution/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WebDistribution59C46482"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Distribution2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:173:26)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new BucketDeployment2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:197:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib, node internals...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1Subnet2BB74ED7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1RouteTable15C15F8E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1RouteTableAssociation4E83B6E4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1DefaultRouteB88F9E93"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:208 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet1/EIP": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1EIP411541E6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet1/NATGateway": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1NATGatewayA036E8A6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2SubnetE34B022A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2RouteTableC5A6DF77"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2RouteTableAssociationCCE257FF"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/publicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2DefaultRoute732F0BEB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:208 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/applicationSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcapplicationSubnet1Subnet8B68205B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/applicationSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcapplicationSubnet1RouteTableF03E8296"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/applicationSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcapplicationSubnet1RouteTableAssociation75D5245D"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/applicationSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcapplicationSubnet1DefaultRouteD1F37131"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/applicationSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcapplicationSubnet2Subnet29670962"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/applicationSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcapplicationSubnet2RouteTable17378AED"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/applicationSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcapplicationSubnet2RouteTableAssociationF25110CC"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/applicationSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcapplicationSubnet2DefaultRoute928D347B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:33:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/databaseSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcdatabaseSubnet1SubnetD53A427B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:272 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/databaseSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcdatabaseSubnet1RouteTableF3B572E4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:272 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/databaseSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcdatabaseSubnet1RouteTableAssociationEE6CA36B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:272 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/databaseSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcdatabaseSubnet2Subnet75663D63"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:272 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/databaseSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcdatabaseSubnet2RouteTable1E50BD8E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:272 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Vpc/databaseSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcdatabaseSubnet2RouteTableAssociationCADBAF9A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\node_modules\\aws-cdk-lib\\aws-ec2\\lib\\vpc.js:1:272 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/DatabaseCredentials/Attachment/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseCredentialsAttachment7BAB329F"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new DatabaseInstance2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:51:22)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Database/SubnetGroup/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSubnetGroup7D60F180"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new DatabaseInstance2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:51:22)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Database/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecurityGroup5C91FDCB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new DatabaseInstance2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:51:22)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Database/SecurityGroup/from AttendancePlatformdevApiServiceSecurityGroup25869DF0:{IndirectPort}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecurityGroupfromAttendancePlatformdevApiServiceSecurityGroup25869DF0IndirectPort553C14F6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...Connections.allowDefaultPortFrom in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:169:26)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/UserPool/WebClient/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "UserPoolWebClient4C9370B0"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...WrappedClass.addClient in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:91:37)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/ImportBucket/Policy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImportBucketPolicy77CCB6EA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Bucket2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:98:26)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)"
+      ]
+    },
+    {
+      "type": "aws:cdk:analytics:mixin",
+      "data": {
+        "mixin": "aws-cdk-lib.aws_s3.mixins.BucketPolicyStatements"
+      }
+    }
+  ],
+  "/AttendancePlatform-dev/ImportBucket/AutoDeleteObjectsCustomResource/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImportBucketAutoDeleteObjectsCustomResource1C99B8C5"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/WebBucket/Policy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WebBucketPolicy95D08FAA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Bucket2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:107:23)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)"
+      ]
+    },
+    {
+      "type": "aws:cdk:analytics:mixin",
+      "data": {
+        "mixin": "aws-cdk-lib.aws_s3.mixins.BucketPolicyStatements"
+      }
+    }
+  ],
+  "/AttendancePlatform-dev/WebBucket/AutoDeleteObjectsCustomResource/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WebBucketAutoDeleteObjectsCustomResource9C1A079F"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/ProcessingQueue/Policy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ProcessingQueuePolicyDDFFDBBA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Queue2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:115:29)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/LB/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiLB8D4BD609"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/TaskDef/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefCB0575BA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/Service/Service": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceD5B4A50A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/WebDeployment/AwsCliLayer/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WebDeploymentAwsCliLayer79C1EFEA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new BucketDeployment2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:197:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/WebDeployment/CustomResource/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WebDeploymentCustomResource08EEC474"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new BucketDeployment2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:197:5)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/LB/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiLBSecurityGroup70AC4E5C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/LB/SecurityGroup/to AttendancePlatformdevApiServiceSecurityGroup25869DF0:3000": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiLBSecurityGrouptoAttendancePlatformdevApiServiceSecurityGroup25869DF03000F6D13F2E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/LB/PublicListener/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiLBPublicListener5142AAA5"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/TaskDef/TaskRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefTaskRole69DE15BC"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/TaskDef/ExecutionRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefExecutionRole5CBCA7DA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/Service/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceSecurityGroupB2E30D06"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/Service/SecurityGroup/from AttendancePlatformdevApiLBSecurityGroupF41AC698:3000": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceSecurityGroupfromAttendancePlatformdevApiLBSecurityGroupF41AC6983000AF2D3AD1"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/WebDistribution/Origin1/S3OriginAccessControl/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WebDistributionOrigin1S3OriginAccessControl83AD2F73"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Distribution2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:173:26)",
+        "<anonymous> (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\bin\\app.ts:8:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/LB/PublicListener/ECSGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiLBPublicListenerECSGroup45FF926A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new AttendancePlatformStack (C:\\Users\\Admin\\.copilot\\repos\\copilot-worktrees\\absense-leave\\partha3580-solid-journey\\infra\\lib\\platform-stack.ts:131:17)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/TaskDef/TaskRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefTaskRoleDefaultPolicyE6FD21EF"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/TaskDef/web/LogGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefwebLogGroupDF6AD406"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/AttendancePlatform-dev/Api/TaskDef/ExecutionRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefExecutionRoleDefaultPolicyE5F94BFA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ]
+}
