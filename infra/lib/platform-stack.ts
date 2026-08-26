@@ -90,6 +90,19 @@ export class AttendancePlatformStack extends Stack {
       removalPolicy,
       autoDeleteObjects: !isProduction,
     })
+    const samlMetadataBucket = new s3.Bucket(this, 'SamlMetadataBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.KMS_MANAGED,
+      enforceSSL: true,
+      versioned: true,
+      lifecycleRules: [
+        {
+          noncurrentVersionExpiration: Duration.days(90),
+        },
+      ],
+      removalPolicy,
+      autoDeleteObjects: !isProduction,
+    })
     const webBucket = new s3.Bucket(this, 'WebBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -137,6 +150,13 @@ export class AttendancePlatformStack extends Stack {
           DATABASE_NAME: 'attendance',
           IMPORT_BUCKET: importBucket.bucketName,
           PROCESSING_QUEUE_URL: processingQueue.queueUrl,
+          SAML_METADATA_BUCKET: samlMetadataBucket.bucketName,
+          SAML_SHARED_POOL_IDS: sharedIdentity.userPool.userPoolId,
+          IDENTITY_ADMIN_POOL_ARNS: [
+            sharedIdentity.userPool.userPoolArn,
+            ...props.identityAdminPoolArns,
+          ].join(','),
+          SAML_ALLOW_INSECURE_LOCALHOST: 'false',
         },
         secrets: {
           DATABASE_USERNAME: ecs.Secret.fromSecretsManager(databaseCredentials, 'username'),
@@ -152,6 +172,7 @@ export class AttendancePlatformStack extends Stack {
     api.targetGroup.configureHealthCheck({ path: '/api/v1/health' })
     database.connections.allowDefaultPortFrom(api.service)
     importBucket.grantReadWrite(api.taskDefinition.taskRole)
+    samlMetadataBucket.grantReadWrite(api.taskDefinition.taskRole)
     processingQueue.grantSendMessages(api.taskDefinition.taskRole)
     api.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -161,6 +182,22 @@ export class AttendancePlatformStack extends Stack {
           'cognito-idp:AdminDisableUser',
           'cognito-idp:AdminEnableUser',
           'cognito-idp:AdminResetUserPassword',
+        ],
+        resources: [
+          sharedIdentity.userPool.userPoolArn,
+          ...props.identityAdminPoolArns,
+        ],
+      }),
+    )
+    api.taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'cognito-idp:CreateIdentityProvider',
+          'cognito-idp:UpdateIdentityProvider',
+          'cognito-idp:DescribeIdentityProvider',
+          'cognito-idp:DeleteIdentityProvider',
+          'cognito-idp:DescribeUserPoolClient',
+          'cognito-idp:UpdateUserPoolClient',
         ],
         resources: [
           sharedIdentity.userPool.userPoolArn,
@@ -204,6 +241,7 @@ export class AttendancePlatformStack extends Stack {
     new CfnOutput(this, 'ApplicationUrl', { value: `https://${distribution.distributionDomainName}` })
     new CfnOutput(this, 'DatabaseEndpoint', { value: database.dbInstanceEndpointAddress })
     new CfnOutput(this, 'ImportBucketName', { value: importBucket.bucketName })
+    new CfnOutput(this, 'SamlMetadataBucketName', { value: samlMetadataBucket.bucketName })
     new CfnOutput(this, 'WebBucketName', { value: webBucket.bucketName })
     new CfnOutput(this, 'SharedIdentityIssuer', {
       value: sharedIdentity.issuer(this.region),

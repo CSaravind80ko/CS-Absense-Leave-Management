@@ -27,6 +27,16 @@ enum IdentityMfaPolicy {
   REQUIRED
 }
 
+enum SamlConnectionStatus {
+  DRAFT
+  METADATA_VALID
+  PROVISIONING
+  READY
+  ACTIVE
+  DISABLED
+  ERROR
+}
+
 enum TenantUserStatus {
   INVITED
   ACTIVE
@@ -169,6 +179,7 @@ model Tenant {
   payrollExports      PayrollExport[]
   payrollItems        PayrollExportItem[]
   auditEvents         AuditEvent[]
+  samlConnections     SamlConnection[]
 }
 
 model TenantMembership {
@@ -216,8 +227,39 @@ model IdentityConnection {
   tenant                Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   externalIdentities    ExternalIdentity[]
   userInvitations       UserInvitation[]
+  samlConnections       SamlConnection[]
 
   @@index([status, isDefault])
+  @@index([tenantId, status])
+}
+
+model SamlConnection {
+  id                       String               @id @default(uuid()) @db.Uuid
+  tenantId                 String               @db.Uuid
+  identityConnectionId     String               @db.Uuid
+  entityId                 String?
+  metadataUrl              String?
+  metadataReference        String?
+  certificateFingerprints  String[]             @default([])
+  certificateDetails       Json?
+  cognitoProviderName      String
+  attributeMapping         Json
+  status                   SamlConnectionStatus @default(DRAFT)
+  metadataValidatedAt      DateTime?
+  provisionedAt            DateTime?
+  testedAt                 DateTime?
+  activatedAt              DateTime?
+  disabledAt               DateTime?
+  testResult               Json?
+  lastErrorCode            String?
+  lastErrorMessage         String?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  tenant                    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  identityConnection       IdentityConnection   @relation(fields: [identityConnectionId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, identityConnectionId])
+  @@unique([identityConnectionId, cognitoProviderName])
   @@index([tenantId, status])
 }
 
