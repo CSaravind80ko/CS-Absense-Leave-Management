@@ -1,5 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Employee } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Employee, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
@@ -25,20 +30,22 @@ export class EmployeesService {
 
   async create(tenantId: string, dto: CreateEmployeeDto): Promise<Employee> {
     await this.validateReferences(tenantId, dto);
-    return this.prisma.employee.create({
-      data: {
-        tenantId,
-        employeeNumber: dto.employeeNumber,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        email: dto.email,
-        departmentId: dto.departmentId,
-        locationId: dto.locationId,
-        shiftId: dto.shiftId,
-        status: dto.status,
-        hireDate: dto.hireDate ? new Date(dto.hireDate) : undefined,
-      },
-    });
+    return this.writeEmployee(() =>
+      this.prisma.employee.create({
+        data: {
+          tenantId,
+          employeeNumber: dto.employeeNumber,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: dto.email,
+          departmentId: dto.departmentId,
+          locationId: dto.locationId,
+          shiftId: dto.shiftId,
+          status: dto.status,
+          hireDate: dto.hireDate ? new Date(dto.hireDate) : undefined,
+        },
+      }),
+    );
   }
 
   async update(
@@ -48,10 +55,34 @@ export class EmployeesService {
   ): Promise<Employee> {
     await this.get(tenantId, id);
     await this.validateReferences(tenantId, dto);
-    return this.prisma.employee.update({
-      where: { id },
-      data: dto,
-    });
+    const { hireDate, ...data } = dto;
+    return this.writeEmployee(() =>
+      this.prisma.employee.update({
+        where: { id },
+        data: {
+          ...data,
+          hireDate: hireDate ? new Date(hireDate) : undefined,
+        },
+      }),
+    );
+  }
+
+  private async writeEmployee(
+    operation: () => Promise<Employee>,
+  ): Promise<Employee> {
+    try {
+      return await operation();
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Employee number already exists for this tenant',
+        );
+      }
+      throw error;
+    }
   }
 
   private async validateReferences(

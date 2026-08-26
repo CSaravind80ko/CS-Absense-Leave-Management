@@ -43,6 +43,18 @@ describe('TenantGuard', () => {
 
   beforeEach(() => findUnique.mockReset());
 
+  it('allows authenticated routes that explicitly skip tenant selection', async () => {
+    const skipReflector = {
+      getAllAndOverride: jest.fn((key: string) => key === 'skipTenant'),
+    } as unknown as Reflector;
+    const skipGuard = new TenantGuard(skipReflector, prisma);
+
+    await expect(skipGuard.canActivate(contextFor({ headers: {} }))).resolves.toBe(
+      true,
+    );
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
   it('rejects a missing tenant header', async () => {
     const request = {
       headers: {},

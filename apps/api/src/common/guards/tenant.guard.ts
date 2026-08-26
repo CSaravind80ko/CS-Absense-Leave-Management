@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { SKIP_TENANT_KEY } from '../decorators/skip-tenant.decorator';
 import { AuthenticatedRequest } from '../types/authenticated-request';
 
 @Injectable()
@@ -19,10 +20,12 @@ export class TenantGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (
-      this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-        context.getHandler(),
-        context.getClass(),
-      ])
+      [IS_PUBLIC_KEY, SKIP_TENANT_KEY].some((key) =>
+        this.reflector.getAllAndOverride<boolean>(key, [
+          context.getHandler(),
+          context.getClass(),
+        ]),
+      )
     ) {
       return true;
     }
