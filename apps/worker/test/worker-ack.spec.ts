@@ -34,6 +34,53 @@ const message: Message = {
 };
 
 describe('AttendanceSqsWorker acknowledgement', () => {
+  it('acknowledges a completed duplicate with an observable correlation log', async () => {
+    const send = jest.fn().mockResolvedValue({});
+    const prisma = {
+      eventLedger: {
+        create: jest.fn().mockRejectedValue(
+          new Prisma.PrismaClientKnownRequestError('duplicate', {
+            code: 'P2002',
+            clientVersion: '6.12.0',
+          }),
+        ),
+        findUnique: jest.fn().mockResolvedValue({
+          eventId: '81d4fae4-6c11-4bb5-9170-eea7fe9d9dd0',
+          tenantId: 'de305d54-75b4-431b-adb2-eb6b9e546014',
+          eventType: 'attendance.import.requested.v1',
+          status: 'COMPLETED',
+          lockedUntil: null,
+        }),
+      },
+    } as unknown as PrismaClient;
+    const processor = {
+      process: jest.fn(),
+    } as unknown as AttendanceEventProcessor;
+    const log = jest.spyOn(console, 'log').mockImplementation();
+    const worker = new AttendanceSqsWorker(
+      prisma,
+      { send } as unknown as SQSClient,
+      processor,
+      config,
+    );
+
+    await (
+      worker as unknown as { handle(message: Message): Promise<void> }
+    ).handle(message);
+
+    expect(processor.process).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('"message":"duplicate event acknowledged"'),
+    );
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '"correlationId":"81d4fae4-6c11-4bb5-9170-eea7fe9d9dd0"',
+      ),
+    );
+    log.mockRestore();
+  });
+
   it('does not delete a message when processing fails', async () => {
     const send = jest.fn();
     const prisma = {

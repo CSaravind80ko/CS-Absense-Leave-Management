@@ -65,6 +65,12 @@ export class AttendanceSqsWorker {
       const shouldProcess = await this.claimEvent(event);
       if (!shouldProcess) {
         await this.deleteMessage(message.ReceiptHandle);
+        log('info', 'duplicate event acknowledged', {
+          correlationId: event.eventId,
+          eventType: event.eventType,
+          tenantId: event.tenantId,
+          receiveCount: message.Attributes?.ApproximateReceiveCount,
+        });
         return;
       }
       claimedByThisWorker = true;
