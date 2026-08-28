@@ -20,6 +20,10 @@
     "db:generate": "npm run prisma:generate --workspace @attendance/api",
     "db:migrate": "npm run prisma:migrate --workspace @attendance/api",
     "db:seed": "npm run prisma:seed --workspace @attendance/api",
+    "e2e:local": "node scripts/e2e-local.mjs",
+    "e2e:dev": "node scripts/e2e-dev.mjs",
+    "deploy:dev": "node scripts/deploy-dev.mjs --stage dev",
+    "infra:verify": "node scripts/verify-synth.mjs",
     "infra:diff": "npm run diff --workspace @attendance/infra",
     "infra:deploy": "npm run deploy --workspace @attendance/infra"
   },

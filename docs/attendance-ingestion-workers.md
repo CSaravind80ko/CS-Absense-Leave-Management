@@ -59,7 +59,10 @@ npm.cmd run db:migrate
 docker compose --profile workers up --build worker
 ```
 
-Run the API with the S3/SQS variables from `apps/api/.env.example`. Seed a period, employee `EMP-0001`, and location `HQ`, then upload `fixtures/attendance-import.csv` through Data Import Centre. LocalStack creates the private buckets and FIFO queue/DLQ automatically.
+Run the API with the S3/SQS variables from `apps/api/.env.example`. Seed the
+development attendance fixture (`DEMO-1001` and location `HQ`), then upload
+`fixtures/attendance-import.csv` through Data Import Centre. LocalStack creates
+the private buckets and FIFO queue/DLQ automatically.
 
 ## Retry, DLQ, and replay
 
