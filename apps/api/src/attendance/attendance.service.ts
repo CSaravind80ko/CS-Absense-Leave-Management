@@ -11,10 +11,15 @@ import {
   ProcessingPeriod,
 } from '@prisma/client';
 import {
+  createEvent,
+  type AttendanceImportRequestedEvent,
+} from '@attendance/contracts';
+import {
   PageResult,
   pageResult,
 } from '../common/dto/page-query.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { enqueueOutboxEvent } from '../events/outbox';
 import {
   AttendanceRegisterQueryDto,
   DashboardQueryDto,
@@ -417,6 +422,41 @@ export class AttendanceService {
     return pageResult(items, total, query);
   }
 
+  async getImportJob(tenantId: string, id: string) {
+    const job = await this.prisma.attendanceImportJob.findFirst({
+      where: { id, tenantId },
+      include: {
+        files: {
+          select: {
+            id: true,
+            fileName: true,
+            contentType: true,
+            sizeBytes: true,
+            checksum: true,
+            createdAt: true,
+            _count: { select: { rows: true } },
+          },
+        },
+      },
+    });
+    if (!job) throw new NotFoundException('Attendance import job not found');
+    const rowSummary = await this.prisma.attendanceImportRow.groupBy({
+      by: ['status'],
+      where: { tenantId, file: { importJobId: id } },
+      _count: { _all: true },
+    });
+    return {
+      ...job,
+      files: job.files.map((file) => ({
+        ...file,
+        sizeBytes: file.sizeBytes.toString(),
+      })),
+      rowSummary: Object.fromEntries(
+        rowSummary.map((row) => [row.status, row._count._all]),
+      ),
+    };
+  }
+
   async createImportJob(
     tenantId: string,
     subject: string,
@@ -447,11 +487,28 @@ export class AttendanceService {
           metadata: { periodId: dto.periodId, source: dto.source },
         },
       });
+      const event = createEvent<AttendanceImportRequestedEvent>(
+        'attendance.import.requested.v1',
+        {
+          tenantId,
+          periodId: dto.periodId,
+          importJobId: created.id,
+          source: created.source,
+          requestedBy: subject,
+          requestedAt: created.createdAt.toISOString(),
+        },
+      );
+      await enqueueOutboxEvent(
+        tx,
+        'AttendanceImportJob',
+        created.id,
+        event,
+      );
       return created;
     });
     return {
       job,
-      workerConnected: false,
+      workerConnected: true,
       dispatch: {
         eventType: 'attendance.import.requested.v1',
         payload: {
