@@ -17,6 +17,7 @@ import {
   PayrollRegisterQueryDto,
 } from './dto/payroll-query.dto';
 import { PayrollService } from './payroll.service';
+import { PayrollFilesService } from './payroll-files.service';
 
 @Controller('payroll')
 @Roles(
@@ -26,7 +27,10 @@ import { PayrollService } from './payroll.service';
   ApplicationRole.AUDITOR,
 )
 export class PayrollController {
-  constructor(private readonly payroll: PayrollService) {}
+  constructor(
+    private readonly payroll: PayrollService,
+    private readonly files: PayrollFilesService,
+  ) {}
 
   @Get('register')
   register(
@@ -50,6 +54,14 @@ export class PayrollController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.payroll.getExport(tenantId, id);
+  }
+
+  @Get('exports/:id/download')
+  downloadExport(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.files.createDownload(tenantId, id);
   }
 
   @Post('exports')

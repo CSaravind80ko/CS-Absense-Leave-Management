@@ -1,10 +1,12 @@
 import {
   CfnOutput,
   Duration,
+  IgnoreMode,
   RemovalPolicy,
   Stack,
   type StackProps,
   aws_cloudfront as cloudfront,
+  aws_cloudwatch as cloudwatch,
   aws_cloudfront_origins as origins,
   aws_ec2 as ec2,
   aws_ecr_assets as ecrAssets,
@@ -35,6 +37,29 @@ export class AttendancePlatformStack extends Stack {
 
     const isProduction = props.stage === 'prod'
     const removalPolicy = isProduction ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY
+    const containerAssetExcludes = [
+      '*',
+      '!package.json',
+      '!package-lock.json',
+      '!apps/',
+      'apps/*',
+      '!apps/api/',
+      '!apps/api/**',
+      '!apps/contracts/',
+      '!apps/contracts/**',
+      '!apps/worker/',
+      '!apps/worker/**',
+      '!infra/',
+      'infra/*',
+      '!infra/package.json',
+      'apps/api/dist',
+      'apps/contracts/dist',
+      'apps/worker/dist',
+      '**/node_modules',
+      '**/node_modules/**',
+      '**/coverage',
+      '**/coverage/**',
+    ]
     const vpc = new ec2.Vpc(this, 'Vpc', {
       maxAzs: 2,
       natGateways: isProduction ? 2 : 1,
@@ -83,10 +108,35 @@ export class AttendancePlatformStack extends Stack {
 
     const importBucket = new s3.Bucket(this, 'ImportBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      encryption: s3.BucketEncryption.S3_MANAGED,
+      encryption: s3.BucketEncryption.KMS_MANAGED,
       enforceSSL: true,
-      versioned: isProduction,
+      versioned: true,
       lifecycleRules: [{ expiration: Duration.days(90) }],
+      cors: [{
+        allowedMethods: [s3.HttpMethods.PUT],
+        allowedOrigins: props.identityCallbackUrls.map(url => new URL(url).origin),
+        allowedHeaders: [
+          'content-type',
+          'x-amz-checksum-sha256',
+          'x-amz-meta-tenantid',
+          'x-amz-meta-importjobid',
+          'x-amz-meta-uploadid',
+        ],
+        exposedHeaders: ['etag', 'x-amz-checksum-sha256'],
+        maxAge: 300,
+      }],
+      removalPolicy,
+      autoDeleteObjects: !isProduction,
+    })
+    const exportBucket = new s3.Bucket(this, 'ExportBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.KMS_MANAGED,
+      enforceSSL: true,
+      versioned: true,
+      lifecycleRules: [
+        { expiration: Duration.days(isProduction ? 365 : 30) },
+        { noncurrentVersionExpiration: Duration.days(30) },
+      ],
       removalPolicy,
       autoDeleteObjects: !isProduction,
     })
@@ -111,14 +161,22 @@ export class AttendancePlatformStack extends Stack {
       autoDeleteObjects: !isProduction,
     })
 
-    const processingQueue = new sqs.Queue(this, 'ProcessingQueue', {
-      visibilityTimeout: Duration.minutes(15),
+    const processingDeadLetterQueue = new sqs.Queue(this, 'ProcessingDeadLetterQueue', {
+      fifo: true,
+      encryption: sqs.QueueEncryption.KMS_MANAGED,
       retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    })
+    const processingQueue = new sqs.Queue(this, 'ProcessingQueue', {
+      fifo: true,
+      contentBasedDeduplication: false,
+      encryption: sqs.QueueEncryption.KMS_MANAGED,
+      visibilityTimeout: Duration.minutes(20),
+      retentionPeriod: Duration.days(14),
+      receiveMessageWaitTime: Duration.seconds(20),
       deadLetterQueue: {
-        maxReceiveCount: 3,
-        queue: new sqs.Queue(this, 'ProcessingDeadLetterQueue', {
-          retentionPeriod: Duration.days(14),
-        }),
+        maxReceiveCount: 5,
+        queue: processingDeadLetterQueue,
       },
       enforceSSL: true,
     })
@@ -138,8 +196,11 @@ export class AttendancePlatformStack extends Stack {
       memoryLimitMiB: isProduction ? 2048 : 1024,
       taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       taskImageOptions: {
-        image: ecs.ContainerImage.fromAsset('../apps/api', {
+        image: ecs.ContainerImage.fromAsset('..', {
+          file: 'apps/api/Dockerfile',
           platform: ecrAssets.Platform.LINUX_AMD64,
+          exclude: containerAssetExcludes,
+          ignoreMode: IgnoreMode.DOCKER,
         }),
         containerPort: 3000,
         environment: {
@@ -149,7 +210,11 @@ export class AttendancePlatformStack extends Stack {
           DATABASE_PORT: database.dbInstanceEndpointPort,
           DATABASE_NAME: 'attendance',
           IMPORT_BUCKET: importBucket.bucketName,
+          EXPORT_BUCKET: exportBucket.bucketName,
           PROCESSING_QUEUE_URL: processingQueue.queueUrl,
+          ATTENDANCE_IMPORT_MAX_BYTES: '26214400',
+          ATTENDANCE_UPLOAD_EXPIRY_SECONDS: '300',
+          PAYROLL_DOWNLOAD_EXPIRY_SECONDS: '300',
           SAML_METADATA_BUCKET: samlMetadataBucket.bucketName,
           SAML_SHARED_POOL_IDS: sharedIdentity.userPool.userPoolId,
           IDENTITY_ADMIN_POOL_ARNS: [
@@ -173,9 +238,10 @@ export class AttendancePlatformStack extends Stack {
     })
     api.targetGroup.configureHealthCheck({ path: '/api/v1/health' })
     database.connections.allowDefaultPortFrom(api.service)
-    importBucket.grantReadWrite(api.taskDefinition.taskRole)
+    importBucket.grantRead(api.taskDefinition.taskRole, 'tenant/*/imports/*')
+    importBucket.grantPut(api.taskDefinition.taskRole, 'tenant/*/imports/*')
+    exportBucket.grantRead(api.taskDefinition.taskRole, 'tenant/*/payroll/*')
     samlMetadataBucket.grantReadWrite(api.taskDefinition.taskRole)
-    processingQueue.grantSendMessages(api.taskDefinition.taskRole)
     api.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: [
@@ -194,6 +260,91 @@ export class AttendancePlatformStack extends Stack {
         ],
       }),
     )
+
+    const workerTask = new ecs.FargateTaskDefinition(this, 'WorkerTask', {
+      cpu: isProduction ? 2048 : 1024,
+      memoryLimitMiB: isProduction ? 4096 : 2048,
+    })
+    workerTask.addContainer('Worker', {
+      image: ecs.ContainerImage.fromAsset('..', {
+        file: 'apps/worker/Dockerfile',
+        platform: ecrAssets.Platform.LINUX_AMD64,
+        exclude: containerAssetExcludes,
+        ignoreMode: IgnoreMode.DOCKER,
+      }),
+      environment: {
+        NODE_ENV: 'production',
+        DATABASE_HOST: database.dbInstanceEndpointAddress,
+        DATABASE_PORT: database.dbInstanceEndpointPort,
+        DATABASE_NAME: 'attendance',
+        IMPORT_BUCKET: importBucket.bucketName,
+        EXPORT_BUCKET: exportBucket.bucketName,
+        PROCESSING_QUEUE_URL: processingQueue.queueUrl,
+        WORKER_CONCURRENCY: isProduction ? '4' : '2',
+        WORKER_VISIBILITY_SECONDS: '900',
+        ATTENDANCE_IMPORT_MAX_ROWS: '50000',
+        ATTENDANCE_IMPORT_MAX_COLUMNS: '20',
+        ATTENDANCE_IMPORT_MAX_CELL_BYTES: '1024',
+        ATTENDANCE_XLSX_MAX_UNCOMPRESSED_BYTES: '209715200',
+        ATTENDANCE_XLSX_MAX_COMPRESSION_RATIO: '100',
+      },
+      secrets: {
+        DATABASE_USERNAME: ecs.Secret.fromSecretsManager(databaseCredentials, 'username'),
+        DATABASE_PASSWORD: ecs.Secret.fromSecretsManager(databaseCredentials, 'password'),
+      },
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'attendance-worker',
+        logRetention: logs.RetentionDays.ONE_MONTH,
+      }),
+    })
+    const worker = new ecs.FargateService(this, 'WorkerService', {
+      cluster,
+      taskDefinition: workerTask,
+      desiredCount: 1,
+      circuitBreaker: { rollback: true },
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+    })
+    database.connections.allowDefaultPortFrom(worker)
+    importBucket.grantRead(workerTask.taskRole, 'tenant/*/imports/*')
+    exportBucket.grantPut(workerTask.taskRole, 'tenant/*/payroll/*')
+    processingQueue.grantConsumeMessages(workerTask.taskRole)
+    processingQueue.grantSendMessages(workerTask.taskRole)
+
+    const workerScaling = worker.autoScaleTaskCount({
+      minCapacity: 1,
+      maxCapacity: isProduction ? 10 : 2,
+    })
+    workerScaling.scaleOnMetric('QueueDepthScaling', {
+      metric: processingQueue.metricApproximateNumberOfMessagesVisible({
+        period: Duration.minutes(1),
+      }),
+      scalingSteps: [
+        { upper: 0, change: -1 },
+        { lower: 5, change: +1 },
+        { lower: 50, change: +3 },
+      ],
+      cooldown: Duration.minutes(2),
+    })
+    new cloudwatch.Alarm(this, 'ProcessingDlqAlarm', {
+      metric: processingDeadLetterQueue.metricApproximateNumberOfMessagesVisible({
+        period: Duration.minutes(1),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    })
+    new cloudwatch.Alarm(this, 'ProcessingOldestMessageAlarm', {
+      metric: processingQueue.metricApproximateAgeOfOldestMessage({
+        period: Duration.minutes(5),
+      }),
+      threshold: 900,
+      evaluationPeriods: 2,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    })
     api.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: [
@@ -250,6 +401,11 @@ export class AttendancePlatformStack extends Stack {
     new CfnOutput(this, 'ApplicationUrl', { value: `https://${distribution.distributionDomainName}` })
     new CfnOutput(this, 'DatabaseEndpoint', { value: database.dbInstanceEndpointAddress })
     new CfnOutput(this, 'ImportBucketName', { value: importBucket.bucketName })
+    new CfnOutput(this, 'ExportBucketName', { value: exportBucket.bucketName })
+    new CfnOutput(this, 'ProcessingQueueUrl', { value: processingQueue.queueUrl })
+    new CfnOutput(this, 'ProcessingDeadLetterQueueUrl', {
+      value: processingDeadLetterQueue.queueUrl,
+    })
     new CfnOutput(this, 'SamlMetadataBucketName', { value: samlMetadataBucket.bucketName })
     new CfnOutput(this, 'WebBucketName', { value: webBucket.bucketName })
     new CfnOutput(this, 'SharedIdentityIssuer', {

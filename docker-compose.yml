@@ -15,5 +15,44 @@ services:
       timeout: 5s
       retries: 10
 
+  localstack:
+    image: localstack/localstack:4.8
+    environment:
+      SERVICES: s3,sqs
+      AWS_DEFAULT_REGION: ap-south-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - "./scripts/localstack-init.sh:/etc/localstack/init/ready.d/attendance.sh:ro"
+      - attendance-localstack:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    profiles: ["workers"]
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://attendance:attendance@postgres:5432/attendance?schema=public
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: ap-south-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      IMPORT_BUCKET: attendance-imports-local
+      EXPORT_BUCKET: attendance-exports-local
+      PROCESSING_QUEUE_URL: http://localstack:4566/000000000000/attendance-processing.fifo
+      WORKER_CONCURRENCY: 2
+      WORKER_VISIBILITY_SECONDS: 120
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
 volumes:
   attendance-postgres:
+  attendance-localstack:

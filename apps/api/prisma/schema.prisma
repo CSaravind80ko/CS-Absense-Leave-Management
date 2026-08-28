@@ -112,6 +112,9 @@ enum ExceptionType {
   OVERTIME
   ABSENCE
   DUPLICATE_PUNCH
+  UNKNOWN_EMPLOYEE
+  INACTIVE_EMPLOYEE
+  OUT_OF_PERIOD
   OUT_OF_LOCATION
   OTHER
 }
@@ -165,6 +168,17 @@ enum PayrollExportStatus {
   DELIVERED
 }
 
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+}
+
+enum EventLedgerStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model Tenant {
   id                  String                       @id @default(uuid()) @db.Uuid
   name                String
@@ -183,6 +197,7 @@ model Tenant {
   employees           Employee[]
   periods             ProcessingPeriod[]
   importJobs          AttendanceImportJob[]
+  importUploads       AttendanceImportUpload[]
   importFiles         AttendanceImportFile[]
   importRows          AttendanceImportRow[]
   punches             AttendancePunch[]
@@ -193,6 +208,8 @@ model Tenant {
   payrollExports      PayrollExport[]
   payrollItems        PayrollExportItem[]
   auditEvents         AuditEvent[]
+  outboxEvents        OutboxEvent[]
+  eventLedger         EventLedger[]
   samlConnections     SamlConnection[]
   scimConnections     ScimProvisioningConnection[]
   scimUsers           ScimUser[]
@@ -599,24 +616,53 @@ model ProcessingPeriod {
 }
 
 model AttendanceImportJob {
-  id           String                 @id @default(uuid()) @db.Uuid
-  tenantId     String                 @db.Uuid
-  periodId     String                 @db.Uuid
-  requestedBy  String
-  source       String
-  status       ImportStatus           @default(PENDING)
-  startedAt    DateTime?
-  completedAt  DateTime?
-  errorMessage String?
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
-  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  period       ProcessingPeriod       @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  files        AttendanceImportFile[]
+  id                    String                   @id @default(uuid()) @db.Uuid
+  tenantId              String                   @db.Uuid
+  periodId              String                   @db.Uuid
+  requestedBy           String
+  source                String
+  status                ImportStatus             @default(PENDING)
+  acceptedRows          Int                      @default(0)
+  rejectedRows          Int                      @default(0)
+  punchesUpserted       Int                      @default(0)
+  attendanceDaysUpdated Int                      @default(0)
+  exceptionsOpened      Int                      @default(0)
+  errorCode             String?
+  errorMessage          String?
+  startedAt             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  tenant                Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period                ProcessingPeriod         @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  upload                 AttendanceImportUpload?
+  files                  AttendanceImportFile[]
+  exceptions             AttendanceException[]
 
   @@unique([id, tenantId])
   @@index([tenantId, periodId, status])
   @@index([tenantId, createdAt])
+}
+
+model AttendanceImportUpload {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @db.Uuid
+  importJobId    String              @db.Uuid
+  fileName       String
+  storageKey     String
+  contentType    String
+  sizeBytes      BigInt
+  checksumSha256 String
+  expiresAt      DateTime
+  finalizedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  importJob      AttendanceImportJob @relation(fields: [importJobId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([importJobId, tenantId])
+  @@unique([tenantId, storageKey])
+  @@unique([id, tenantId])
+  @@index([tenantId, expiresAt])
 }
 
 model AttendanceImportFile {
@@ -634,6 +680,7 @@ model AttendanceImportFile {
   rows        AttendanceImportRow[]
 
   @@unique([id, tenantId])
+  @@unique([tenantId, importJobId])
   @@unique([tenantId, storageKey])
   @@index([tenantId, importJobId])
 }
@@ -644,7 +691,9 @@ model AttendanceImportRow {
   fileId          String               @db.Uuid
   rowNumber       Int
   rawData         Json
+  canonicalData   Json?
   status          RowStatus            @default(PENDING)
+  errorCode       String?
   validationError String?
   createdAt       DateTime             @default(now())
   tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -711,7 +760,9 @@ model AttendanceException {
   id                   String            @id @default(uuid()) @db.Uuid
   tenantId             String            @db.Uuid
   attendanceDayId      String?           @db.Uuid
-  employeeId           String            @db.Uuid
+  employeeId           String?           @db.Uuid
+  importJobId          String?           @db.Uuid
+  dedupeKey            String?
   type                 ExceptionType
   status               ExceptionStatus   @default(OPEN)
   severity             ExceptionSeverity @default(MEDIUM)
@@ -728,10 +779,12 @@ model AttendanceException {
   updatedAt            DateTime          @updatedAt
   tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   attendanceDay        AttendanceDay?    @relation(fields: [attendanceDayId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  employee             Employee          @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  employee             Employee?         @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  importJob            AttendanceImportJob? @relation(fields: [importJobId, tenantId], references: [id, tenantId], onDelete: Restrict)
   approvalRequests     ApprovalRequest[]
 
   @@unique([id, tenantId])
+  @@unique([tenantId, dedupeKey])
   @@index([tenantId, status, type])
   @@index([tenantId, status, severity, payrollImpact])
   @@index([tenantId, assignedToSubject, status])
@@ -790,7 +843,10 @@ model PayrollExport {
   status            PayrollExportStatus @default(DRAFT)
   version           Int                 @default(1)
   storageKey        String?
+  storageBucket     String?
   checksum          String?
+  sizeBytes         BigInt?
+  errorCode         String?
   requestedBy       String
   generatedAt       DateTime?
   createdAt         DateTime            @default(now())
@@ -842,4 +898,42 @@ model AuditEvent {
   @@index([tenantId, occurredAt])
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, actorSubject, occurredAt])
+}
+
+model OutboxEvent {
+  id           String       @id @default(uuid()) @db.Uuid
+  eventId      String       @unique @db.Uuid
+  tenantId     String       @db.Uuid
+  aggregateType String
+  aggregateId  String       @db.Uuid
+  eventType    String
+  payload      Json
+  status       OutboxStatus @default(PENDING)
+  attemptCount Int          @default(0)
+  availableAt  DateTime     @default(now())
+  publishedAt  DateTime?
+  lastError    String?
+  createdAt    DateTime     @default(now())
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([status, availableAt, createdAt])
+  @@index([tenantId, aggregateType, aggregateId])
+}
+
+model EventLedger {
+  id          String            @id @default(uuid()) @db.Uuid
+  eventId     String            @unique @db.Uuid
+  tenantId    String            @db.Uuid
+  eventType   String
+  status      EventLedgerStatus @default(PROCESSING)
+  attemptCount Int              @default(1)
+  lockedUntil DateTime?
+  completedAt DateTime?
+  lastError   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([status, lockedUntil])
+  @@index([tenantId, eventType, createdAt])
 }

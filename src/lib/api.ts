@@ -283,7 +283,7 @@ export interface AttendanceException {
   resolutionNote: string | null
   version: number
   createdAt: string
-  employee: Employee & { department?: { id: string; name: string } | null }
+  employee: (Employee & { department?: { id: string; name: string } | null }) | null
   attendanceDay: { id: string; workDate: string; status: AttendanceStatus; version: number } | null
 }
 
@@ -354,7 +354,48 @@ export interface AttendanceImportJob {
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
   requestedBy: string
   errorMessage: string | null
+  errorCode: string | null
+  acceptedRows: number
+  rejectedRows: number
+  punchesUpserted: number
+  attendanceDaysUpdated: number
+  exceptionsOpened: number
   createdAt: string
+}
+
+export interface AttendanceImportDetail extends AttendanceImportJob {
+  files: Array<{
+    id: string
+    fileName: string
+    contentType: string
+    sizeBytes: string
+    checksum: string
+    createdAt: string
+    _count: { rows: number }
+  }>
+  rowSummary: Partial<Record<'PENDING' | 'VALID' | 'INVALID' | 'PROCESSED', number>>
+}
+
+export interface ImportUploadReservation {
+  uploadId: string
+  method: 'PUT'
+  uploadUrl: string
+  storageKey: string
+  expiresAt: string
+  headers: Record<string, string>
+}
+
+export interface PayrollExport {
+  id: string
+  periodId: string
+  periodVersion: number
+  format: 'CSV' | 'XLSX'
+  status: 'DRAFT' | 'GENERATING' | 'READY' | 'FAILED' | 'DELIVERED'
+  errorCode: string | null
+  checksum: string | null
+  generatedAt: string | null
+  createdAt: string
+  _count: { items: number }
 }
 
 export class ApiError extends Error {
@@ -434,10 +475,31 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       request<AttendanceDayDetail>(`/attendance/days/${id}`, { signal }),
     getAttendanceImports: (periodId: string, signal?: AbortSignal) =>
       request<Page<AttendanceImportJob>>(`/attendance/imports?periodId=${encodeURIComponent(periodId)}&pageSize=50`, { signal }),
+    getAttendanceImport: (id: string, signal?: AbortSignal) =>
+      request<AttendanceImportDetail>(`/attendance/imports/${id}`, { signal }),
     requestAttendanceImport: (periodId: string, source: string) =>
-      request<{ job: AttendanceImportJob; workerConnected: false }>('/attendance/imports', {
+      request<{ job: AttendanceImportJob; workerConnected: true }>('/attendance/imports', {
         method: 'POST',
         body: JSON.stringify({ periodId, source }),
+      }),
+    createAttendanceImportUpload: (
+      id: string,
+      input: { fileName: string; contentType: string; sizeBytes: number; checksumSha256: string },
+    ) => request<ImportUploadReservation>(`/attendance/imports/${id}/uploads`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    uploadAttendanceFile: async (upload: ImportUploadReservation, file: File) => {
+      const response = await fetch(upload.uploadUrl, {
+        method: upload.method,
+        headers: upload.headers,
+        body: file,
+      })
+      if (!response.ok) throw new ApiError('Private object upload failed', response.status)
+    },
+    finalizeAttendanceImport: (id: string, uploadId: string) =>
+      request(`/attendance/imports/${id}/uploads/${uploadId}/finalize`, {
+        method: 'POST',
       }),
     getExceptions: (
       periodId: string,
@@ -487,15 +549,21 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       if (search) query.set('search', search)
       return request<PayrollRegister>(`/payroll/register?${query}`, { signal })
     },
+    getPayrollExports: (periodId: string, signal?: AbortSignal) =>
+      request<Page<PayrollExport>>(`/payroll/exports?periodId=${encodeURIComponent(periodId)}&pageSize=20`, { signal }),
     requestPayrollExport: (
       periodId: string,
       periodVersion: number,
       format: 'CSV' | 'XLSX',
       approvalRequestId?: string,
-    ) => request<{ payrollExport: { id: string; status: 'DRAFT' }; workerConnected: false }>('/payroll/exports', {
+    ) => request<{ payrollExport: PayrollExport; workerConnected: true }>('/payroll/exports', {
       method: 'POST',
       body: JSON.stringify({ periodId, periodVersion, format, approvalRequestId }),
     }),
+    getPayrollExportDownload: (id: string) =>
+      request<{ downloadUrl: string; expiresAt: string; checksumSha256: string }>(
+        `/payroll/exports/${id}/download`,
+      ),
     createEmployee: (input: EmployeeInput) => request<Employee>('/employees', {
       method: 'POST',
       body: JSON.stringify(input),
