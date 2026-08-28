@@ -5,7 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import {
+  createEvent,
+  type PayrollExportRequestedEvent,
+} from '@attendance/contracts';
 import { pageResult } from '../common/dto/page-query.dto';
+import { enqueueOutboxEvent } from '../events/outbox';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePayrollExportDto } from './dto/create-payroll-export.dto';
 import {
@@ -250,11 +255,24 @@ export class PayrollService {
           },
         },
       });
+      const event = createEvent<PayrollExportRequestedEvent>(
+        'payroll.export.requested.v1',
+        {
+          tenantId,
+          periodId: dto.periodId,
+          periodVersion: dto.periodVersion,
+          payrollExportId: created.id,
+          format: dto.format,
+          requestedBy: subject,
+          requestedAt: created.createdAt.toISOString(),
+        },
+      );
+      await enqueueOutboxEvent(tx, 'PayrollExport', created.id, event);
       return created;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     return {
       payrollExport,
-      workerConnected: false,
+      workerConnected: true,
       dispatch: {
         eventType: 'payroll.export.requested.v1',
         payload: {

@@ -1,0 +1,21 @@
+{
+  "name": "@attendance/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/events.js",
+  "types": "dist/events.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/events.d.ts",
+      "require": "./dist/events.js",
+      "default": "./dist/events.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2"
+  }
+}

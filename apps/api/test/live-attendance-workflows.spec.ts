@@ -254,6 +254,7 @@ describe('PayrollService', () => {
       attendanceDay: { count: jest.fn().mockResolvedValue(20) },
       payrollExport: { create: jest.fn().mockResolvedValue(payrollExport) },
       auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      outboxEvent: { create: jest.fn().mockResolvedValue({}) },
     };
     const prisma = {
       $transaction: transaction(tx),
@@ -265,7 +266,7 @@ describe('PayrollService', () => {
       { periodId, periodVersion: 7, format: 'CSV' },
     );
 
-    expect(result.workerConnected).toBe(false);
+    expect(result.workerConnected).toBe(true);
     expect(tx.payrollExport.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ periodVersion: 7 }),
     });
@@ -280,6 +281,13 @@ describe('PayrollService', () => {
         requestedBy: 'payroll-subject',
         requestedAt: '2026-08-28T08:00:00.000Z',
       },
+    });
+    expect(tx.outboxEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tenantId,
+        aggregateId: entityId,
+        eventType: 'payroll.export.requested.v1',
+      }),
     });
   });
 
