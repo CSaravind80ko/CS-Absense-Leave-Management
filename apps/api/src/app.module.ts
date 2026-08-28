@@ -17,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { MeModule } from './me/me.module';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { SamlConnectionsModule } from './saml-connections/saml-connections.module';
+import { ScimModule } from './scim/scim.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SamlConnectionsModule } from './saml-connections/saml-connections.modul
     MeModule,
     TenantUsersModule,
     SamlConnectionsModule,
+    ScimModule,
   ],
   controllers: [HealthController, IdentityDiscoveryController],
   providers: [

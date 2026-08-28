@@ -157,6 +157,8 @@ export class AttendancePlatformStack extends Stack {
             ...props.identityAdminPoolArns,
           ].join(','),
           SAML_ALLOW_INSECURE_LOCALHOST: 'false',
+          API_JSON_BODY_LIMIT: '256kb',
+          SCIM_RATE_LIMIT_PER_MINUTE: '120',
         },
         secrets: {
           DATABASE_USERNAME: ecs.Secret.fromSecretsManager(databaseCredentials, 'username'),
@@ -179,8 +181,11 @@ export class AttendancePlatformStack extends Stack {
         actions: [
           'cognito-idp:AdminCreateUser',
           'cognito-idp:AdminGetUser',
+          'cognito-idp:AdminDeleteUser',
+          'cognito-idp:AdminDeleteUserAttributes',
           'cognito-idp:AdminDisableUser',
           'cognito-idp:AdminEnableUser',
+          'cognito-idp:AdminUpdateUserAttributes',
           'cognito-idp:AdminResetUserPassword',
         ],
         resources: [
@@ -229,6 +234,10 @@ export class AttendancePlatformStack extends Stack {
         { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html' },
       ],
     })
+    api.taskDefinition.defaultContainer?.addEnvironment(
+      'SCIM_PUBLIC_BASE_URL',
+      `https://${distribution.distributionDomainName}/api/v1/scim/v2`,
+    )
 
     new s3Deployment.BucketDeployment(this, 'WebDeployment', {
       sources: [s3Deployment.Source.asset('../dist')],

@@ -33,7 +33,7 @@ npm run db:seed
 npm run dev:api
 ```
 
-Run `npm run dev:web` in a second terminal. The web application uses `VITE_API_URL` and falls back to prototype mode while the API is unavailable.
+Run `npm run dev:web` in a second terminal. The web application uses `VITE_API_URL`; live attendance screens show explicit retry/error states when the API is unavailable.
 
 Before seeding, deploy or create the shared Cognito pool and managed-login domain. Copy its issuer, public app client ID, hosted UI base URL, and the administrator's immutable `sub` into the `SEED_IDENTITY_*` and `SEED_ADMIN_COGNITO_SUBJECT` values in `apps\api\.env`. The seed is idempotent and creates the default shared connection, tenant membership, and external identity mapping.
 
@@ -43,7 +43,7 @@ The web flow is:
 2. Authenticate through Cognito Managed Login using OIDC Authorization Code + PKCE. Cognito owns MFA and first-login challenges.
 3. Load active tenant memberships for the verified connection and immutable provider subject.
 4. Select a tenant, which supplies `X-Tenant-Id` on business API requests.
-5. Use role-protected employee management against PostgreSQL-backed APIs.
+5. Use role-protected employee and live attendance workflows against PostgreSQL-backed APIs.
 
 Browser OIDC state and tokens use `sessionStorage`, not `localStorage`. Configure `VITE_AUTH_REDIRECT_URI` and `VITE_AUTH_POST_LOGOUT_REDIRECT_URI` with exact URLs registered on the Cognito app client.
 
@@ -146,6 +146,14 @@ The shared production pool requires TOTP MFA. Development defaults to optional M
 All business aggregates are tenant-owned. Tenant IDs are required on employees, organization structures, source imports, attendance records, exceptions, approvals, payroll exports, and audit events. Composite unique constraints prevent identifiers from leaking or colliding across tenants.
 
 Attendance source rows are retained separately from calculated attendance days. Processing creates traceable decisions; corrections and approvals append records rather than rewriting history. Payroll exports reference the exact period and attendance result set used to generate them.
+
+## Live attendance Layer 1
+
+Processing periods, attendance register/day detail, exception decisions, approval history, payroll readiness/export requests, and dashboard metrics are live tenant-scoped workflows. Mutations use optimistic record versions, explicit lifecycle guards, transactions, and audit events. Select the processing period in the application header; no screen assumes August 2026.
+
+Import and payroll export screens are intentionally metadata-only until Layer 2 connects private S3 uploads and SQS workers. They never report a fake upload, parse, processing, or generated-file success. See `docs/live-attendance-workflows.md` for all endpoints, lifecycle rules, composite tenant constraints, and the exact Layer 2 event schemas.
+
+Set `SEED_ATTENDANCE_DEMO=true` only for local evaluation to add deterministic employees, attendance days, punch evidence, one critical exception, and its pending approval. The seed remains disabled by default and contains no credentials.
 
 ## Commands
 

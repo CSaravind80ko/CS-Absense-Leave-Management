@@ -60,6 +60,8 @@ Authorization uses the composite identity `(connectionId, subject)`. Tenant auth
 
 SCIM provisioning in a later layer must create or locate a `TenantMembership`, then create an immutable `ExternalIdentity` with `connectionId`, Cognito `providerSubject`, `tenantId`, and `tenantMembershipId`. It must not mutate an existing mapping to point to a different subject or membership.
 
+Layer 3 implements that contract in [SCIM 2.0 provisioning](scim-provisioning.md).
+
 For managed local users, `providerUsername` stores the Cognito administrative username separately from immutable `providerSubject`. SAML and SCIM layers must preserve that distinction.
 
 ## Tenant administration API
