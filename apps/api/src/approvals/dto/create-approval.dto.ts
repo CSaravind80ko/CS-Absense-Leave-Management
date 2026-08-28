@@ -1,5 +1,5 @@
-import { ApprovalType } from '@prisma/client';
-import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { ApplicationRole, ApprovalType } from '@prisma/client';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateApprovalDto {
   @IsEnum(ApprovalType)
@@ -12,4 +12,12 @@ export class CreateApprovalDto {
   @IsOptional()
   @IsUUID()
   exceptionId?: string;
+
+  @IsOptional()
+  @IsString()
+  assigneeSubject?: string;
+
+  @IsOptional()
+  @IsEnum(ApplicationRole)
+  assigneeRole?: ApplicationRole;
 }
