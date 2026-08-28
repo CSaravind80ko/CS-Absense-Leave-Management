@@ -20,7 +20,7 @@ export interface TenantMembership {
   id: string
   name: string
   slug: string
-  role: string
+  role: ApplicationRole
 }
 
 export interface LoginMetadata {
@@ -207,6 +207,156 @@ export interface EmployeeInput {
   hireDate?: string
 }
 
+export type PeriodStatus = 'OPEN' | 'PROCESSING' | 'REVIEW' | 'APPROVED' | 'EXPORTED' | 'CLOSED'
+export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'HOLIDAY' | 'WEEKEND'
+export type ExceptionStatus = 'OPEN' | 'RESOLVED' | 'DISMISSED'
+export type ExceptionSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+export type PayrollImpact = 'NONE' | 'REVIEW_REQUIRED' | 'UNPAID_MINUTES' | 'BLOCKED'
+
+export interface Page<T> {
+  items: T[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+export interface ProcessingPeriod {
+  id: string
+  name: string
+  startsOn: string
+  endsOn: string
+  status: PeriodStatus
+  version: number
+  lockedAt: string | null
+  reopenedAt: string | null
+  reopenReason: string | null
+  updatedAt: string
+}
+
+export interface AttendanceRegisterItem {
+  id: string
+  workDate: string
+  status: AttendanceStatus
+  scheduledMinutes: number
+  workedMinutes: number
+  overtimeMinutes: number
+  lateMinutes: number
+  firstPunchAt: string | null
+  lastPunchAt: string | null
+  version: number
+  employee: Employee & {
+    department: { id: string; name: string } | null
+    location: { id: string; name: string } | null
+    shift: { id: string; name: string } | null
+  }
+  exceptions: Array<{
+    id: string
+    severity: ExceptionSeverity
+    payrollImpact: PayrollImpact
+    type: string
+  }>
+}
+
+export interface AttendanceDayDetail extends AttendanceRegisterItem {
+  period: ProcessingPeriod
+  punches: Array<{
+    id: string
+    occurredAt: string
+    type: string
+    source: string
+    externalId: string | null
+    location: { id: string; name: string } | null
+  }>
+}
+
+export interface AttendanceException {
+  id: string
+  type: string
+  status: ExceptionStatus
+  severity: ExceptionSeverity
+  payrollImpact: PayrollImpact
+  payrollImpactMinutes: number
+  assignedToSubject: string | null
+  assignedToRole: ApplicationRole | null
+  details: Record<string, unknown> | null
+  resolutionNote: string | null
+  version: number
+  createdAt: string
+  employee: Employee & { department?: { id: string; name: string } | null }
+  attendanceDay: { id: string; workDate: string; status: AttendanceStatus; version: number } | null
+}
+
+export interface ExceptionPage extends Page<AttendanceException> {
+  summary: { open: number; critical: number; blocked: number }
+}
+
+export interface ApprovalAction {
+  id: string
+  action: string
+  actorSubject: string
+  comment: string | null
+  createdAt: string
+}
+
+export interface ApprovalRequest {
+  id: string
+  type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT'
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+  requestedBy: string
+  assigneeSubject: string | null
+  assigneeRole: ApplicationRole | null
+  version: number
+  createdAt: string
+  period: Pick<ProcessingPeriod, 'id' | 'name' | 'startsOn' | 'endsOn'> | null
+  exception: AttendanceException | null
+  actions: ApprovalAction[]
+}
+
+export interface PayrollRegisterItem {
+  employee: Employee & { department: { id: string; name: string } | null }
+  regularMinutes: number
+  overtimeMinutes: number
+  unpaidMinutes: number
+  attendanceDays: number
+  readiness: 'READY' | 'BLOCKED'
+}
+
+export interface PayrollRegister extends Page<PayrollRegisterItem> {
+  period: ProcessingPeriod
+  readiness: { total: number; ready: number; blocked: number; readinessPercent: number }
+}
+
+export interface AttendanceDashboard {
+  period: ProcessingPeriod
+  metrics: {
+    activeEmployees: number
+    attendanceProcessed: number
+    payrollReady: number
+    openExceptions: number
+    criticalBlockers: number
+    pendingApprovals: number
+    readinessPercent: number
+  }
+  imports: AttendanceImportJob[]
+  recentActivity: Array<{
+    id: string
+    action: string
+    actorSubject: string
+    occurredAt: string
+  }>
+}
+
+export interface AttendanceImportJob {
+  id: string
+  periodId: string
+  source: string
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  requestedBy: string
+  errorMessage: string | null
+  createdAt: string
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly details?: unknown
@@ -254,6 +404,98 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
   return {
     getTenants: () => request<TenantMembership[]>('/me/tenants'),
     getEmployees: (signal?: AbortSignal) => request<Employee[]>('/employees', { signal }),
+    getAttendancePeriods: () =>
+      request<Page<ProcessingPeriod>>('/attendance/periods?pageSize=100&order=desc'),
+    createAttendancePeriod: (input: { name: string; startsOn: string; endsOn: string }) =>
+      request<ProcessingPeriod>('/attendance/periods', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    transitionAttendancePeriod: (
+      id: string,
+      input: { status: PeriodStatus; version: number; reason?: string },
+    ) => request<ProcessingPeriod>(`/attendance/periods/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+    getAttendanceDashboard: (periodId: string, signal?: AbortSignal) =>
+      request<AttendanceDashboard>(`/attendance/dashboard?periodId=${encodeURIComponent(periodId)}`, { signal }),
+    getAttendanceRegister: (
+      periodId: string,
+      input: { search?: string; status?: AttendanceStatus; page?: number } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ periodId, page: String(input.page ?? 1), pageSize: '50' })
+      if (input.search) query.set('search', input.search)
+      if (input.status) query.set('status', input.status)
+      return request<Page<AttendanceRegisterItem>>(`/attendance/register?${query}`, { signal })
+    },
+    getAttendanceDay: (id: string, signal?: AbortSignal) =>
+      request<AttendanceDayDetail>(`/attendance/days/${id}`, { signal }),
+    getAttendanceImports: (periodId: string, signal?: AbortSignal) =>
+      request<Page<AttendanceImportJob>>(`/attendance/imports?periodId=${encodeURIComponent(periodId)}&pageSize=50`, { signal }),
+    requestAttendanceImport: (periodId: string, source: string) =>
+      request<{ job: AttendanceImportJob; workerConnected: false }>('/attendance/imports', {
+        method: 'POST',
+        body: JSON.stringify({ periodId, source }),
+      }),
+    getExceptions: (
+      periodId: string,
+      input: { search?: string; status?: ExceptionStatus; severity?: ExceptionSeverity } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ periodId, pageSize: '50' })
+      if (input.search) query.set('search', input.search)
+      if (input.status) query.set('status', input.status)
+      if (input.severity) query.set('severity', input.severity)
+      return request<ExceptionPage>(`/exceptions?${query}`, { signal })
+    },
+    getException: (id: string, signal?: AbortSignal) =>
+      request<AttendanceException>(`/exceptions/${id}`, { signal }),
+    decideException: (
+      id: string,
+      input: { decision: Exclude<ExceptionStatus, 'OPEN'>; note: string; version: number },
+    ) => request<AttendanceException>(`/exceptions/${id}/decision`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+    assignException: (
+      id: string,
+      input: { version: number; assignedToSubject?: string; assignedToRole?: ApplicationRole },
+    ) => request<AttendanceException>(`/exceptions/${id}/assignment`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+    getApprovals: (
+      input: { periodId?: string; status?: ApprovalRequest['status']; scope?: 'inbox' | 'requested' | 'all' } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ pageSize: '50', scope: input.scope ?? 'inbox' })
+      if (input.periodId) query.set('periodId', input.periodId)
+      if (input.status) query.set('status', input.status)
+      return request<Page<ApprovalRequest>>(`/approvals?${query}`, { signal })
+    },
+    actOnApproval: (
+      id: string,
+      input: { action: 'APPROVED' | 'REJECTED' | 'COMMENTED' | 'CANCELLED'; comment?: string; version: number },
+    ) => request<ApprovalRequest>(`/approvals/${id}/actions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    getPayrollRegister: (periodId: string, search = '', signal?: AbortSignal) => {
+      const query = new URLSearchParams({ periodId, pageSize: '50' })
+      if (search) query.set('search', search)
+      return request<PayrollRegister>(`/payroll/register?${query}`, { signal })
+    },
+    requestPayrollExport: (
+      periodId: string,
+      periodVersion: number,
+      format: 'CSV' | 'XLSX',
+      approvalRequestId?: string,
+    ) => request<{ payrollExport: { id: string; status: 'DRAFT' }; workerConnected: false }>('/payroll/exports', {
+      method: 'POST',
+      body: JSON.stringify({ periodId, periodVersion, format, approvalRequestId }),
+    }),
     createEmployee: (input: EmployeeInput) => request<Employee>('/employees', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -361,6 +603,8 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       request<ScimAuditEvent[]>(`/scim-admin/${samlConnectionId}/events`),
   }
 }
+
+export type ApiClient = ReturnType<typeof createApiClient>
 
 export async function getApiHealth(signal?: AbortSignal): Promise<ApiHealth> {
   return apiRequest<ApiHealth>('/health', { signal })
