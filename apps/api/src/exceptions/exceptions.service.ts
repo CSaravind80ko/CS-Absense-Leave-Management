@@ -25,31 +25,38 @@ export class ExceptionsService {
       severity: query.severity,
       type: query.type,
       assignedToSubject: query.assignedToSubject,
-      attendanceDay: { periodId: query.periodId },
-      ...(query.search
-        ? {
-            OR: [
+      AND: [
+        {
+          OR: [
+            { attendanceDay: { periodId: query.periodId } },
+            { importJob: { periodId: query.periodId } },
+          ],
+        },
+        ...(query.search
+          ? [{
+              OR: [
               {
                 employee: {
                   employeeNumber: {
                     contains: query.search,
-                    mode: 'insensitive',
+                    mode: 'insensitive' as const,
                   },
                 },
               },
               {
                 employee: {
-                  firstName: { contains: query.search, mode: 'insensitive' },
+                  firstName: { contains: query.search, mode: 'insensitive' as const },
                 },
               },
               {
                 employee: {
-                  lastName: { contains: query.search, mode: 'insensitive' },
+                  lastName: { contains: query.search, mode: 'insensitive' as const },
                 },
               },
-            ],
-          }
-        : {}),
+              ],
+            }]
+          : []),
+      ],
     };
     const [items, total, open, critical, blocked] =
       await this.prisma.$transaction([
@@ -78,7 +85,10 @@ export class ExceptionsService {
           where: {
             tenantId,
             status: 'OPEN',
-            attendanceDay: { periodId: query.periodId },
+            OR: [
+              { attendanceDay: { periodId: query.periodId } },
+              { importJob: { periodId: query.periodId } },
+            ],
           },
         }),
         this.prisma.attendanceException.count({
@@ -86,7 +96,10 @@ export class ExceptionsService {
             tenantId,
             status: 'OPEN',
             severity: 'CRITICAL',
-            attendanceDay: { periodId: query.periodId },
+            OR: [
+              { attendanceDay: { periodId: query.periodId } },
+              { importJob: { periodId: query.periodId } },
+            ],
           },
         }),
         this.prisma.attendanceException.count({
@@ -94,7 +107,10 @@ export class ExceptionsService {
             tenantId,
             status: 'OPEN',
             payrollImpact: 'BLOCKED',
-            attendanceDay: { periodId: query.periodId },
+            OR: [
+              { attendanceDay: { periodId: query.periodId } },
+              { importJob: { periodId: query.periodId } },
+            ],
           },
         }),
       ]);

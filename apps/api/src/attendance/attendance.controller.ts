@@ -20,7 +20,9 @@ import {
   PeriodQueryDto,
 } from './dto/attendance-query.dto';
 import { CreateImportJobDto } from './dto/create-import-job.dto';
+import { CreateImportUploadDto } from './dto/create-import-upload.dto';
 import { CreatePeriodDto } from './dto/create-period.dto';
+import { ImportStorageService } from './import-storage.service';
 import { UpdatePeriodStatusDto } from './dto/update-period-status.dto';
 
 @Controller('attendance')
@@ -32,7 +34,10 @@ import { UpdatePeriodStatusDto } from './dto/update-period-status.dto';
   ApplicationRole.AUDITOR,
 )
 export class AttendanceController {
-  constructor(private readonly attendance: AttendanceService) {}
+  constructor(
+    private readonly attendance: AttendanceService,
+    private readonly storage: ImportStorageService,
+  ) {}
 
   @Get('periods')
   listPeriods(@TenantId() tenantId: string, @Query() query: PeriodQueryDto) {
@@ -105,5 +110,34 @@ export class AttendanceController {
     @Body() dto: CreateImportJobDto,
   ) {
     return this.attendance.createImportJob(tenantId, subject, dto);
+  }
+
+  @Get('imports/:id')
+  getImport(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.attendance.getImportJob(tenantId, id);
+  }
+
+  @Post('imports/:id/uploads')
+  @Roles(ApplicationRole.TENANT_ADMIN, ApplicationRole.HR_ADMIN)
+  createImportUpload(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateImportUploadDto,
+  ) {
+    return this.storage.createUpload(tenantId, id, dto);
+  }
+
+  @Post('imports/:id/uploads/:uploadId/finalize')
+  @Roles(ApplicationRole.TENANT_ADMIN, ApplicationRole.HR_ADMIN)
+  finalizeImportUpload(
+    @TenantId() tenantId: string,
+    @Subject() subject: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('uploadId', ParseUUIDPipe) uploadId: string,
+  ) {
+    return this.storage.finalizeUpload(tenantId, id, uploadId, subject);
   }
 }

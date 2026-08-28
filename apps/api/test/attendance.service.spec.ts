@@ -167,4 +167,53 @@ describe('AttendanceService', () => {
       },
     });
   });
+
+  it('atomically retains the import request event in the outbox', async () => {
+    const createdAt = new Date('2026-08-28T08:00:00.000Z');
+    const job = {
+      id: periodId,
+      tenantId,
+      periodId,
+      requestedBy: 'actor',
+      source: 'MANUAL_FILE',
+      status: 'PENDING',
+      createdAt,
+    };
+    const tx = {
+      attendanceImportJob: { create: jest.fn().mockResolvedValue(job) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      outboxEvent: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      processingPeriod: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: periodId,
+          tenantId,
+          status: 'OPEN',
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const result = await new AttendanceService(prisma).createImportJob(
+      tenantId,
+      'actor',
+      { periodId, source: 'MANUAL_FILE' },
+    );
+    expect(result.workerConnected).toBe(true);
+    expect(result.dispatch.payload).toEqual({
+      tenantId,
+      periodId,
+      importJobId: periodId,
+      source: 'MANUAL_FILE',
+      requestedBy: 'actor',
+      requestedAt: '2026-08-28T08:00:00.000Z',
+    });
+    expect(tx.outboxEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tenantId,
+        aggregateId: periodId,
+        eventType: 'attendance.import.requested.v1',
+      }),
+    });
+  });
 });
