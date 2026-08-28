@@ -73,10 +73,15 @@ New authorization must never query `cognitoSubject` directly. See `docs/identity
 The shared pool has managed login, a public Authorization Code client suitable for PKCE, token revocation, TOTP, and production-required MFA/deletion protection. Synthesize with exact callback/logout arrays:
 
 ```powershell
-npm run synth --workspace @attendance/infra -- --context stage=dev --context identityDomainPrefix=attendance-dev-123456789012 --context 'identityCallbackUrls=["http://localhost:5173"]' --context 'identityLogoutUrls=["http://localhost:5173"]'
+node scripts/deploy-dev.mjs --action synth --stage dev `
+  --account 123456789012 --region ap-south-1
 ```
 
 `CognitoOidcConnection` is the reusable construct for dedicated enterprise pools. Tenant SAML onboarding does not create pools dynamically: create the pool, managed-login domain, public app client, and disabled `IdentityConnection` first. Add every dedicated pool ARN to `identityAdminPoolArns` before activation. This keeps Cognito administration resource-scoped; production IAM must never use `*`.
+
+AWS development delivery, migration-first deployment, Cognito bootstrap,
+deployed E2E, monitoring, rollback, DLQ replay, cost controls, and teardown are
+documented in [docs/development-deployment.md](docs/development-deployment.md).
 
 ## Enterprise SAML onboarding
 

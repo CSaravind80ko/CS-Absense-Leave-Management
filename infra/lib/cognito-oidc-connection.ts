@@ -7,16 +7,20 @@ import { Construct } from 'constructs'
 
 export interface CognitoOidcConnectionProps {
   domainPrefix: string
-  callbackUrls: string[]
-  logoutUrls: string[]
   removalPolicy: RemovalPolicy
   requireMfa: boolean
+  userPoolName?: string
+}
+
+export interface CognitoOidcWebClientProps {
+  callbackUrls: string[]
+  logoutUrls: string[]
 }
 
 export class CognitoOidcConnection extends Construct {
   readonly userPool: cognito.UserPool
-  readonly userPoolClient: cognito.UserPoolClient
   readonly domain: cognito.UserPoolDomain
+  private webClient?: cognito.UserPoolClient
 
   constructor(scope: Construct, id: string, props: CognitoOidcConnectionProps) {
     super(scope, id)
@@ -42,12 +46,20 @@ export class CognitoOidcConnection extends Construct {
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       removalPolicy: props.removalPolicy,
       deletionProtection: props.requireMfa,
+      userPoolName: props.userPoolName,
     })
     this.domain = this.userPool.addDomain('ManagedLoginDomain', {
       cognitoDomain: { domainPrefix: props.domainPrefix },
       managedLoginVersion: cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
     })
-    this.userPoolClient = this.userPool.addClient('WebOidcClient', {
+  }
+
+  addWebClient(props: CognitoOidcWebClientProps): cognito.UserPoolClient {
+    if (this.webClient) {
+      throw new Error('The Cognito web client has already been configured')
+    }
+
+    this.webClient = this.userPool.addClient('WebOidcClient', {
       authFlows: {},
       generateSecret: false,
       preventUserExistenceErrors: true,
@@ -69,6 +81,14 @@ export class CognitoOidcConnection extends Construct {
         logoutUrls: props.logoutUrls,
       },
     })
+    return this.webClient
+  }
+
+  get userPoolClient(): cognito.UserPoolClient {
+    if (!this.webClient) {
+      throw new Error('Call addWebClient before accessing userPoolClient')
+    }
+    return this.webClient
   }
 
   issuer(region: string): string {
