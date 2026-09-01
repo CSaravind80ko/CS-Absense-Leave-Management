@@ -11,6 +11,8 @@ import {
 } from '@prisma/client';
 import {
   createEvent,
+  type AttendanceDayRecomputeCompletedEvent,
+  type AttendanceDayRecomputeRequestedEvent,
   type AttendanceEvent,
   type AttendanceImportCompletedEvent,
   type AttendanceImportFileReadyEvent,
@@ -62,6 +64,8 @@ export class AttendanceEventProcessor {
       await this.processImport(event);
     } else if (event.eventType === 'payroll.export.requested.v1') {
       await this.processPayroll(event);
+    } else if (event.eventType === 'attendance.day.recompute-requested.v1') {
+      await this.processRecompute(event);
     }
   }
 
@@ -518,6 +522,187 @@ export class AttendanceEventProcessor {
     });
   }
 
+  private async processRecompute(event: AttendanceDayRecomputeRequestedEvent): Promise<void> {
+    try {
+      if (!(await this.claimRecompute(event))) return;
+      const tenant = await this.prisma.tenant.findFirst({
+        where: { id: event.tenantId },
+        select: { timezone: true },
+      });
+      if (!tenant) {
+        throw new PermanentJobError('TENANT_NOT_FOUND', 'Tenant was not found');
+      }
+      const dateFrom = new Date(`${event.dateFrom}T00:00:00.000Z`);
+      const dateTo = new Date(`${event.dateTo}T00:00:00.000Z`);
+      const employeeFilter = scopeToEmployeeFilter(event.scopeType, event.scopeId);
+      let daysMatched = 0;
+      let daysRecomputed = 0;
+      let exceptionsOpened = 0;
+      let cursor: string | undefined;
+      for (;;) {
+        const page = await this.prisma.attendanceDay.findMany({
+          where: {
+            tenantId: event.tenantId,
+            workDate: { gte: dateFrom, lte: dateTo },
+            ...(event.scopeType === 'EMPLOYEE'
+              ? { employeeId: event.scopeId }
+              : { employee: employeeFilter }),
+          },
+          select: { id: true, employeeId: true, workDate: true, periodId: true },
+          orderBy: { id: 'asc' },
+          cursor: cursor ? { id: cursor } : undefined,
+          skip: cursor ? 1 : 0,
+          take: 200,
+        });
+        if (page.length === 0) break;
+        daysMatched += page.length;
+        await this.prisma.$transaction(
+          async (tx) => {
+            for (const day of page) {
+              const result = await recomputeDay(tx, {
+                tenantId: event.tenantId,
+                periodId: day.periodId,
+                employeeId: day.employeeId,
+                workDate: day.workDate,
+                timezone: tenant.timezone,
+              });
+              daysRecomputed += 1;
+              exceptionsOpened += result.exceptionsOpened;
+            }
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 120_000 },
+        );
+        cursor = page[page.length - 1].id;
+      }
+      await this.completeRecompute(event, { daysMatched, daysRecomputed, exceptionsOpened });
+    } catch (error) {
+      if (error instanceof PermanentJobError) {
+        await this.failRecompute(event, error);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private async claimRecompute(event: AttendanceDayRecomputeRequestedEvent): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const job = await tx.policyRecomputeJob.findFirst({
+        where: { id: event.recomputeJobId, tenantId: event.tenantId },
+      });
+      if (!job) {
+        throw new PermanentJobError('RECOMPUTE_JOB_NOT_FOUND', 'Policy recompute job was not found');
+      }
+      if (job.status === 'COMPLETED' || job.status === 'FAILED') return false;
+      if (job.status === 'PENDING') {
+        const claimed = await tx.policyRecomputeJob.updateMany({
+          where: { id: event.recomputeJobId, tenantId: event.tenantId, status: 'PENDING' },
+          data: { status: 'PROCESSING', startedAt: new Date(), errorCode: null, errorMessage: null },
+        });
+        if (claimed.count !== 1) throw new Error('Recompute claim was lost');
+        await tx.auditEvent.create({
+          data: {
+            tenantId: event.tenantId,
+            actorSubject: 'system:attendance-worker',
+            action: 'policy.recompute.processing',
+            entityType: 'PolicyRecomputeJob',
+            entityId: event.recomputeJobId,
+            requestId: event.eventId,
+          },
+        });
+      }
+      return true;
+    });
+  }
+
+  private async completeRecompute(
+    event: AttendanceDayRecomputeRequestedEvent,
+    counts: { daysMatched: number; daysRecomputed: number; exceptionsOpened: number },
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.policyRecomputeJob.updateMany({
+        where: { id: event.recomputeJobId, tenantId: event.tenantId, status: 'PROCESSING' },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          daysMatched: counts.daysMatched,
+          daysRecomputed: counts.daysRecomputed,
+          exceptionsOpened: counts.exceptionsOpened,
+        },
+      });
+      if (!updated.count) return;
+      const completed = createEvent<AttendanceDayRecomputeCompletedEvent>(
+        'attendance.day.recompute-completed.v1',
+        {
+          tenantId: event.tenantId,
+          recomputeJobId: event.recomputeJobId,
+          status: 'COMPLETED',
+          daysMatched: counts.daysMatched,
+          daysRecomputed: counts.daysRecomputed,
+          exceptionsOpened: counts.exceptionsOpened,
+          errorCode: null,
+        },
+      );
+      await createOutbox(tx, 'PolicyRecomputeJob', event.recomputeJobId, completed);
+      await tx.auditEvent.create({
+        data: {
+          tenantId: event.tenantId,
+          actorSubject: 'system:attendance-worker',
+          action: 'policy.recompute.completed',
+          entityType: 'PolicyRecomputeJob',
+          entityId: event.recomputeJobId,
+          requestId: event.eventId,
+          metadata: jsonValue(counts),
+        },
+      });
+    });
+  }
+
+  private async failRecompute(
+    event: AttendanceDayRecomputeRequestedEvent,
+    error: PermanentJobError,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.policyRecomputeJob.updateMany({
+        where: {
+          id: event.recomputeJobId,
+          tenantId: event.tenantId,
+          status: { in: ['PENDING', 'PROCESSING'] },
+        },
+        data: {
+          status: 'FAILED',
+          completedAt: new Date(),
+          errorCode: error.code,
+          errorMessage: error.message.slice(0, 1000),
+        },
+      });
+      if (!updated.count) return;
+      const failed = createEvent<AttendanceDayRecomputeCompletedEvent>(
+        'attendance.day.recompute-completed.v1',
+        {
+          tenantId: event.tenantId,
+          recomputeJobId: event.recomputeJobId,
+          status: 'FAILED',
+          daysMatched: 0,
+          daysRecomputed: 0,
+          exceptionsOpened: 0,
+          errorCode: error.code,
+        },
+      );
+      await createOutbox(tx, 'PolicyRecomputeJob', event.recomputeJobId, failed);
+      await tx.auditEvent.create({
+        data: {
+          tenantId: event.tenantId,
+          actorSubject: 'system:attendance-worker',
+          action: 'policy.recompute.failed',
+          entityType: 'PolicyRecomputeJob',
+          entityId: event.recomputeJobId,
+          requestId: event.eventId,
+          metadata: { errorCode: error.code },
+        },
+      });
+    });
+  }
+
   private async processPayroll(event: PayrollExportRequestedEvent): Promise<void> {
     try {
       const claimed = await this.claimPayroll(event);
@@ -834,6 +1019,24 @@ function sanitizeRow(values: Record<string, string>): Record<string, string | nu
     locationCode: values.locationCode || null,
     source: values.source || null,
   };
+}
+
+function scopeToEmployeeFilter(
+  scopeType: AttendanceDayRecomputeRequestedEvent['scopeType'],
+  scopeId: string,
+): Prisma.EmployeeWhereInput {
+  switch (scopeType) {
+    case 'LOCATION':
+      return { locationId: scopeId };
+    case 'DEPARTMENT':
+      return { departmentId: scopeId };
+    case 'EMPLOYEE_GROUP':
+      return { groupMemberships: { some: { groupId: scopeId } } };
+    case 'TENANT':
+    case 'EMPLOYEE':
+    default:
+      return {};
+  }
 }
 
 function exceptionType(
