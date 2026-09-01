@@ -179,6 +179,26 @@ enum EventLedgerStatus {
   FAILED
 }
 
+enum PolicyScopeType {
+  TENANT
+  LOCATION
+  DEPARTMENT
+  EMPLOYEE_GROUP
+  EMPLOYEE
+}
+
+enum PolicyVersionStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum PolicyRecomputeStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model Tenant {
   id                  String                       @id @default(uuid()) @db.Uuid
   name                String
@@ -215,6 +235,10 @@ model Tenant {
   scimUsers           ScimUser[]
   scimGroups          ScimGroup[]
   scimCredentials     ScimCredential[]
+  policyVersions      PolicyVersion[]
+  employeeGroups      EmployeeGroup[]
+  holidays            Holiday[]
+  policyRecomputeJobs PolicyRecomputeJob[]
 }
 
 model TenantMembership {
@@ -532,6 +556,7 @@ model Location {
   employees Employee[]
   shifts    Shift[]
   punches   AttendancePunch[]
+  holidays  Holiday[]
 
   @@unique([tenantId, code])
   @@index([tenantId, name])
@@ -559,29 +584,30 @@ model Shift {
 }
 
 model Employee {
-  id              String                @id @default(uuid()) @db.Uuid
-  tenantId        String                @db.Uuid
-  employeeNumber  String
-  cognitoSubject  String?
-  firstName       String
-  lastName        String
-  email           String?
-  departmentId    String?               @db.Uuid
-  locationId      String?               @db.Uuid
-  shiftId         String?               @db.Uuid
-  status          EmployeeStatus        @default(ACTIVE)
-  hireDate        DateTime?             @db.Date
-  terminationDate DateTime?             @db.Date
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  department      Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  location        Location?             @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  shift           Shift?                @relation(fields: [shiftId], references: [id], onDelete: SetNull)
-  punches         AttendancePunch[]
-  attendanceDays  AttendanceDay[]
-  exceptions      AttendanceException[]
-  payrollItems    PayrollExportItem[]
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @db.Uuid
+  employeeNumber   String
+  cognitoSubject   String?
+  firstName        String
+  lastName         String
+  email            String?
+  departmentId     String?               @db.Uuid
+  locationId       String?               @db.Uuid
+  shiftId          String?               @db.Uuid
+  status           EmployeeStatus        @default(ACTIVE)
+  hireDate         DateTime?             @db.Date
+  terminationDate  DateTime?             @db.Date
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department       Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  location         Location?             @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  shift            Shift?                @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  punches          AttendancePunch[]
+  attendanceDays   AttendanceDay[]
+  exceptions       AttendanceException[]
+  payrollItems     PayrollExportItem[]
+  groupMemberships EmployeeGroupMember[]
 
   @@unique([tenantId, employeeNumber])
   @@unique([tenantId, cognitoSubject])
@@ -616,28 +642,28 @@ model ProcessingPeriod {
 }
 
 model AttendanceImportJob {
-  id                    String                   @id @default(uuid()) @db.Uuid
-  tenantId              String                   @db.Uuid
-  periodId              String                   @db.Uuid
+  id                    String                  @id @default(uuid()) @db.Uuid
+  tenantId              String                  @db.Uuid
+  periodId              String                  @db.Uuid
   requestedBy           String
   source                String
-  status                ImportStatus             @default(PENDING)
-  acceptedRows          Int                      @default(0)
-  rejectedRows          Int                      @default(0)
-  punchesUpserted       Int                      @default(0)
-  attendanceDaysUpdated Int                      @default(0)
-  exceptionsOpened      Int                      @default(0)
+  status                ImportStatus            @default(PENDING)
+  acceptedRows          Int                     @default(0)
+  rejectedRows          Int                     @default(0)
+  punchesUpserted       Int                     @default(0)
+  attendanceDaysUpdated Int                     @default(0)
+  exceptionsOpened      Int                     @default(0)
   errorCode             String?
   errorMessage          String?
   startedAt             DateTime?
   completedAt           DateTime?
-  createdAt             DateTime                 @default(now())
-  updatedAt             DateTime                 @updatedAt
-  tenant                Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  period                ProcessingPeriod         @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  upload                 AttendanceImportUpload?
-  files                  AttendanceImportFile[]
-  exceptions             AttendanceException[]
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  tenant                Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period                ProcessingPeriod        @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  upload                AttendanceImportUpload?
+  files                 AttendanceImportFile[]
+  exceptions            AttendanceException[]
 
   @@unique([id, tenantId])
   @@index([tenantId, periodId, status])
@@ -742,44 +768,48 @@ model AttendanceDay {
   firstPunchAt     DateTime?
   lastPunchAt      DateTime?
   sourceSummary    Json?
+  policyVersionId  String?               @db.Uuid
+  calculationTrace Json?
   version          Int                   @default(1)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   period           ProcessingPeriod      @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
   employee         Employee              @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  policyVersion    PolicyVersion?        @relation(fields: [policyVersionId, tenantId], references: [id, tenantId], onDelete: Restrict)
   exceptions       AttendanceException[]
 
   @@unique([tenantId, employeeId, workDate])
   @@unique([id, tenantId])
   @@index([tenantId, periodId])
   @@index([tenantId, status])
+  @@index([tenantId, policyVersionId])
 }
 
 model AttendanceException {
-  id                   String            @id @default(uuid()) @db.Uuid
-  tenantId             String            @db.Uuid
-  attendanceDayId      String?           @db.Uuid
-  employeeId           String?           @db.Uuid
-  importJobId          String?           @db.Uuid
+  id                   String               @id @default(uuid()) @db.Uuid
+  tenantId             String               @db.Uuid
+  attendanceDayId      String?              @db.Uuid
+  employeeId           String?              @db.Uuid
+  importJobId          String?              @db.Uuid
   dedupeKey            String?
   type                 ExceptionType
-  status               ExceptionStatus   @default(OPEN)
-  severity             ExceptionSeverity @default(MEDIUM)
-  payrollImpact        PayrollImpact     @default(REVIEW_REQUIRED)
-  payrollImpactMinutes Int               @default(0)
+  status               ExceptionStatus      @default(OPEN)
+  severity             ExceptionSeverity    @default(MEDIUM)
+  payrollImpact        PayrollImpact        @default(REVIEW_REQUIRED)
+  payrollImpactMinutes Int                  @default(0)
   assignedToSubject    String?
   assignedToRole       ApplicationRole?
-  version              Int               @default(1)
+  version              Int                  @default(1)
   details              Json?
   resolutionNote       String?
   resolvedBy           String?
   resolvedAt           DateTime?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  attendanceDay        AttendanceDay?    @relation(fields: [attendanceDayId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  employee             Employee?         @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  attendanceDay        AttendanceDay?       @relation(fields: [attendanceDayId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  employee             Employee?            @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
   importJob            AttendanceImportJob? @relation(fields: [importJobId, tenantId], references: [id, tenantId], onDelete: Restrict)
   approvalRequests     ApprovalRequest[]
 
@@ -901,39 +931,154 @@ model AuditEvent {
 }
 
 model OutboxEvent {
-  id           String       @id @default(uuid()) @db.Uuid
-  eventId      String       @unique @db.Uuid
-  tenantId     String       @db.Uuid
+  id            String       @id @default(uuid()) @db.Uuid
+  eventId       String       @unique @db.Uuid
+  tenantId      String       @db.Uuid
   aggregateType String
-  aggregateId  String       @db.Uuid
-  eventType    String
-  payload      Json
-  status       OutboxStatus @default(PENDING)
-  attemptCount Int          @default(0)
-  availableAt  DateTime     @default(now())
-  publishedAt  DateTime?
-  lastError    String?
-  createdAt    DateTime     @default(now())
-  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  aggregateId   String       @db.Uuid
+  eventType     String
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attemptCount  Int          @default(0)
+  availableAt   DateTime     @default(now())
+  publishedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
   @@index([status, availableAt, createdAt])
   @@index([tenantId, aggregateType, aggregateId])
 }
 
 model EventLedger {
-  id          String            @id @default(uuid()) @db.Uuid
-  eventId     String            @unique @db.Uuid
-  tenantId    String            @db.Uuid
-  eventType   String
-  status      EventLedgerStatus @default(PROCESSING)
-  attemptCount Int              @default(1)
-  lockedUntil DateTime?
-  completedAt DateTime?
-  lastError   String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  id           String            @id @default(uuid()) @db.Uuid
+  eventId      String            @unique @db.Uuid
+  tenantId     String            @db.Uuid
+  eventType    String
+  status       EventLedgerStatus @default(PROCESSING)
+  attemptCount Int               @default(1)
+  lockedUntil  DateTime?
+  completedAt  DateTime?
+  lastError    String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
   @@index([status, lockedUntil])
   @@index([tenantId, eventType, createdAt])
+}
+
+/// Immutable, effective-dated attendance policy version, scoped to exactly one of
+/// TENANT/LOCATION/DEPARTMENT/EMPLOYEE_GROUP/EMPLOYEE. Precedence resolution picks the
+/// single most specific PUBLISHED version whose effectiveFrom has passed for a given
+/// employee/date (whole-record override, not field-level merge). scopeId is always
+/// populated, even for TENANT scope (scopeId == tenantId), so the unique index below is
+/// well-defined (Postgres treats NULL as distinct in unique indexes).
+model PolicyVersion {
+  id              String               @id @default(uuid()) @db.Uuid
+  tenantId        String               @db.Uuid
+  scopeType       PolicyScopeType
+  scopeId         String               @db.Uuid
+  status          PolicyVersionStatus  @default(DRAFT)
+  name            String
+  effectiveFrom   DateTime             @db.Date
+  workingWeekdays Int[]                @default([1, 2, 3, 4, 5])
+  rules           Json
+  supersedesId    String?              @db.Uuid
+  publishedAt     DateTime?
+  publishedBy     String?
+  createdBy       String
+  version         Int                  @default(1)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supersedes      PolicyVersion?       @relation("PolicyVersionHistory", fields: [supersedesId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  supersededBy    PolicyVersion[]      @relation("PolicyVersionHistory")
+  attendanceDays  AttendanceDay[]
+  recomputeJobs   PolicyRecomputeJob[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, scopeType, scopeId, effectiveFrom])
+  @@index([tenantId, scopeType, scopeId, status, effectiveFrom])
+  @@index([tenantId, status])
+}
+
+/// Scoping group for EMPLOYEE_GROUP-level policy overrides. priority breaks ties when an
+/// employee belongs to more than one group with an applicable policy version (higher wins).
+model EmployeeGroup {
+  id        String                @id @default(uuid()) @db.Uuid
+  tenantId  String                @db.Uuid
+  name      String
+  code      String
+  priority  Int                   @default(0)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members   EmployeeGroupMember[]
+
+  @@unique([tenantId, code])
+  @@unique([id, tenantId])
+  @@index([tenantId, name])
+}
+
+model EmployeeGroupMember {
+  tenantId   String        @db.Uuid
+  groupId    String        @db.Uuid
+  employeeId String        @db.Uuid
+  createdAt  DateTime      @default(now())
+  group      EmployeeGroup @relation(fields: [groupId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  employee   Employee      @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@id([groupId, employeeId])
+  @@index([tenantId, employeeId])
+}
+
+/// A non-working day. A location-specific row (locationId set) takes priority over a
+/// tenant-wide row (locationId null) on the same date. No DB-level uniqueness on
+/// (tenantId, locationId, date) because Postgres treats NULL as distinct in unique
+/// indexes; duplicate prevention for tenant-wide rows is enforced in the service layer.
+model Holiday {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @db.Uuid
+  locationId String?   @db.Uuid
+  date       DateTime  @db.Date
+  name       String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location   Location? @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+  @@index([tenantId, locationId, date])
+}
+
+/// Tracks an async, selective attendance-day recompute triggered by a policy publish or a
+/// group membership/priority change. Structurally mirrors AttendanceImportJob so the
+/// worker's existing claim/complete/fail conventions apply unchanged.
+model PolicyRecomputeJob {
+  id                         String                @id @default(uuid()) @db.Uuid
+  tenantId                   String                @db.Uuid
+  scopeType                  PolicyScopeType
+  scopeId                    String                @db.Uuid
+  dateFrom                   DateTime              @db.Date
+  dateTo                     DateTime              @db.Date
+  reason                     String
+  triggeredByPolicyVersionId String?               @db.Uuid
+  requestedBy                String
+  status                     PolicyRecomputeStatus @default(PENDING)
+  daysMatched                Int                   @default(0)
+  daysRecomputed             Int                   @default(0)
+  exceptionsOpened           Int                   @default(0)
+  errorCode                  String?
+  errorMessage               String?
+  startedAt                  DateTime?
+  completedAt                DateTime?
+  createdAt                  DateTime              @default(now())
+  updatedAt                  DateTime              @updatedAt
+  tenant                     Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  triggeredByPolicyVersion   PolicyVersion?        @relation(fields: [triggeredByPolicyVersionId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
 }
