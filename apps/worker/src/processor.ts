@@ -32,6 +32,7 @@ import {
   type PayrollExportRow,
 } from './export-format';
 import { parseImportFile, type ParsedImportRow } from './parser';
+import { resolveEffectivePolicy } from './policy-resolution';
 
 interface ValidatedRow {
   rowNumber: number;
@@ -399,13 +400,14 @@ export class AttendanceEventProcessor {
         let attendanceDaysUpdated = 0;
         let dayExceptionsOpened = 0;
         for (const item of affected.values()) {
-          const result = await recomputeDay(
-            tx,
-            event,
-            item.employeeId,
-            item.workDate,
+          const result = await recomputeDay(tx, {
+            tenantId: event.tenantId,
+            periodId: event.periodId,
+            employeeId: item.employeeId,
+            workDate: item.workDate,
             timezone,
-          );
+            importJobId: event.importJobId,
+          });
           attendanceDaysUpdated += 1;
           dayExceptionsOpened += result.exceptionsOpened;
         }
@@ -843,13 +845,20 @@ function exceptionType(
   return 'DUPLICATE_PUNCH';
 }
 
-async function recomputeDay(
+export interface RecomputeDayParams {
+  tenantId: string;
+  periodId: string;
+  employeeId: string;
+  workDate: Date;
+  timezone: string;
+  importJobId?: string;
+}
+
+export async function recomputeDay(
   tx: Prisma.TransactionClient,
-  event: AttendanceImportFileReadyEvent,
-  employeeId: string,
-  workDate: Date,
-  timezone: string,
+  params: RecomputeDayParams,
 ): Promise<{ exceptionsOpened: number }> {
+  const { tenantId, periodId, employeeId, workDate, timezone, importJobId } = params;
   const workDateText = workDate.toISOString().slice(0, 10);
   const rangeStart = DateTime.fromISO(workDateText, { zone: timezone })
     .startOf('day')
@@ -861,13 +870,13 @@ async function recomputeDay(
     .toUTC()
     .toJSDate();
   const employee = await tx.employee.findFirst({
-    where: { id: employeeId, tenantId: event.tenantId },
+    where: { id: employeeId, tenantId },
     include: { shift: true },
   }) as EmployeeWithShift | null;
   if (!employee) throw new PermanentJobError('EMPLOYEE_NOT_FOUND', 'Employee disappeared during import');
   const punches = await tx.attendancePunch.findMany({
     where: {
-      tenantId: event.tenantId,
+      tenantId,
       employeeId,
       occurredAt: { gte: rangeStart, lt: rangeEnd },
     },
@@ -915,76 +924,309 @@ async function recomputeDay(
   }
   const missingPunch = Boolean(openIn || breakStartedAt) || !punches.some((punch) => punch.type === 'IN') ||
     !punches.some((punch) => punch.type === 'OUT');
-  const shiftMinutes = employee.shift
-    ? ((employee.shift.endMinutes - employee.shift.startMinutes + 1440) % 1440) -
-      employee.shift.breakMinutes
+
+  const { policyVersion, rules, scopeType, scopeId } = await resolveEffectivePolicy(
+    tx,
+    tenantId,
+    employeeId,
+    workDate,
+  );
+
+  const candidateHolidays = await tx.holiday.findMany({
+    where: {
+      tenantId,
+      date: workDate,
+      OR: [
+        ...(employee.locationId ? [{ locationId: employee.locationId }] : []),
+        { locationId: null },
+      ],
+    },
+  });
+  const holiday =
+    candidateHolidays.find((row) => row.locationId === employee.locationId) ??
+    candidateHolidays.find((row) => row.locationId === null) ??
+    null;
+
+  const weekday = DateTime.fromISO(workDateText, { zone: timezone }).weekday;
+  const isWorkingWeekday = policyVersion.workingWeekdays.includes(weekday);
+  const dayType: 'HOLIDAY' | 'WEEKEND' | 'WORKING' = holiday
+    ? 'HOLIDAY'
+    : !isWorkingWeekday
+      ? 'WEEKEND'
+      : 'WORKING';
+
+  const shiftSpanMinutes = employee.shift
+    ? (employee.shift.endMinutes - employee.shift.startMinutes + 1440) % 1440
     : 0;
-  const scheduledMinutes = Math.max(0, shiftMinutes);
-  const overtimeMinutes = Math.max(0, workedMinutes - scheduledMinutes);
+  const shiftMinutes = employee.shift ? shiftSpanMinutes - employee.shift.breakMinutes : 0;
+
+  let scheduledMinutes = 0;
+  let overtimeMinutes = 0;
+  let lateMinutes = 0;
+  let earlyDepartureMinutes = 0;
+  let status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'HOLIDAY' | 'WEEKEND';
+
+  if (dayType === 'WORKING') {
+    scheduledMinutes = Math.max(0, shiftMinutes);
+    status =
+      workedMinutes === 0
+        ? 'ABSENT'
+        : scheduledMinutes && workedMinutes < scheduledMinutes
+          ? 'PARTIAL'
+          : 'PRESENT';
+
+    if (employee.shift && punches[0]?.occurredAt) {
+      const scheduledStart = DateTime.fromISO(workDateText, { zone: timezone }).plus({
+        minutes: employee.shift.startMinutes,
+      });
+      const graceDeadline = scheduledStart.plus({ minutes: rules.lateArrival.graceMinutes });
+      lateMinutes = Math.max(
+        0,
+        Math.round(
+          (DateTime.fromJSDate(punches[0].occurredAt).toMillis() - graceDeadline.toMillis()) /
+            60_000,
+        ),
+      );
+    }
+    // Early departure is only meaningful once a complete IN/OUT pair exists for the day —
+    // computing it against a punch left open by a missing OUT would misattribute the gap.
+    if (employee.shift && punches.at(-1)?.occurredAt && !missingPunch) {
+      const scheduledEnd = DateTime.fromISO(workDateText, { zone: timezone }).plus({
+        minutes: employee.shift.startMinutes + shiftSpanMinutes,
+      });
+      const graceDeadline = scheduledEnd.minus({ minutes: rules.earlyDeparture.graceMinutes });
+      earlyDepartureMinutes = Math.max(
+        0,
+        Math.round(
+          (graceDeadline.toMillis() -
+            DateTime.fromJSDate(punches.at(-1)!.occurredAt).toMillis()) /
+            60_000,
+        ),
+      );
+    }
+
+    const overtimeExcess = Math.max(0, workedMinutes - scheduledMinutes);
+    const overtimeEligible =
+      overtimeExcess > rules.overtime.thresholdMinutes ? overtimeExcess : 0;
+    const roundedOvertime =
+      rules.overtime.roundingMinutes > 0
+        ? Math.floor(overtimeEligible / rules.overtime.roundingMinutes) *
+          rules.overtime.roundingMinutes
+        : overtimeEligible;
+    overtimeMinutes =
+      rules.overtime.dailyCapMinutes != null
+        ? Math.min(roundedOvertime, rules.overtime.dailyCapMinutes)
+        : roundedOvertime;
+  } else {
+    // HOLIDAY/WEEKEND: no schedule is expected, and any worked time is treated as overtime
+    // for this slice (comp-off handling is a later roadmap item, not this one).
+    scheduledMinutes = 0;
+    overtimeMinutes = workedMinutes;
+    status = dayType;
+  }
+
+  const isFullAbsence = dayType === 'WORKING' && status === 'ABSENT';
+  const isPartialUnderHalfDay =
+    dayType === 'WORKING' &&
+    status === 'PARTIAL' &&
+    workedMinutes < rules.halfDay.halfDayThresholdMinutes;
+
   const sourceSummary = Object.fromEntries(
     Array.from(new Set(punches.map((punch) => punch.source))).map((source) => [
       source,
       punches.filter((punch) => punch.source === source).length,
     ]),
   );
+
+  const calculationTrace = jsonValue({
+    policyVersionId: policyVersion.id,
+    scopeType,
+    scopeId,
+    effectiveFrom: policyVersion.effectiveFrom.toISOString().slice(0, 10),
+    dayType,
+    workingWeekdays: policyVersion.workingWeekdays,
+    holiday: holiday ? { id: holiday.id, name: holiday.name } : null,
+    rules,
+    computed: {
+      scheduledMinutes,
+      workedMinutes,
+      overtimeMinutes,
+      lateMinutes,
+      earlyDepartureMinutes,
+      firstPunchAt: punches[0]?.occurredAt.toISOString() ?? null,
+      lastPunchAt: punches.at(-1)?.occurredAt.toISOString() ?? null,
+    },
+    ruleEvaluations: [
+      {
+        rule: 'LATE_ARRIVAL',
+        graceMinutes: rules.lateArrival.graceMinutes,
+        resultMinutes: lateMinutes,
+        triggered: dayType === 'WORKING' && lateMinutes > 0,
+      },
+      {
+        rule: 'EARLY_DEPARTURE',
+        graceMinutes: rules.earlyDeparture.graceMinutes,
+        resultMinutes: earlyDepartureMinutes,
+        triggered: dayType === 'WORKING' && earlyDepartureMinutes > 0,
+      },
+      {
+        rule: 'OVERTIME',
+        thresholdMinutes: rules.overtime.thresholdMinutes,
+        resultMinutes: overtimeMinutes,
+        triggered: overtimeMinutes > 0,
+      },
+      {
+        rule: 'ABSENCE',
+        halfDayThresholdMinutes: rules.halfDay.halfDayThresholdMinutes,
+        workedMinutes,
+        triggered: isFullAbsence || isPartialUnderHalfDay,
+      },
+      {
+        rule: 'MISSING_PUNCH',
+        triggered: dayType === 'WORKING' && missingPunch,
+      },
+    ],
+    computedAt: new Date().toISOString(),
+  });
+
   const day = await tx.attendanceDay.upsert({
     where: {
       tenantId_employeeId_workDate: {
-        tenantId: event.tenantId,
+        tenantId,
         employeeId,
         workDate,
       },
     },
     create: {
-      tenantId: event.tenantId,
-      periodId: event.periodId,
+      tenantId,
+      periodId,
       employeeId,
       workDate,
-      status: workedMinutes === 0 ? 'ABSENT' : scheduledMinutes && workedMinutes < scheduledMinutes ? 'PARTIAL' : 'PRESENT',
+      status,
       scheduledMinutes,
       workedMinutes,
       overtimeMinutes,
+      lateMinutes,
       firstPunchAt: punches[0]?.occurredAt,
       lastPunchAt: punches.at(-1)?.occurredAt,
       sourceSummary,
+      policyVersionId: policyVersion.id,
+      calculationTrace,
     },
     update: {
-      periodId: event.periodId,
-      status: workedMinutes === 0 ? 'ABSENT' : scheduledMinutes && workedMinutes < scheduledMinutes ? 'PARTIAL' : 'PRESENT',
+      periodId,
+      status,
       scheduledMinutes,
       workedMinutes,
       overtimeMinutes,
+      lateMinutes,
       firstPunchAt: punches[0]?.occurredAt ?? null,
       lastPunchAt: punches.at(-1)?.occurredAt ?? null,
       sourceSummary,
+      policyVersionId: policyVersion.id,
+      calculationTrace,
       version: { increment: 1 },
     },
   });
   const exceptions: Prisma.AttendanceExceptionCreateManyInput[] = [];
-  if (missingPunch) {
+  if (missingPunch && dayType === 'WORKING') {
     exceptions.push({
-      tenantId: event.tenantId,
+      tenantId,
       employeeId,
       attendanceDayId: day.id,
-      importJobId: event.importJobId,
+      importJobId,
       type: 'MISSING_PUNCH',
       severity: 'HIGH',
       payrollImpact: 'BLOCKED',
       dedupeKey: `day:${day.id}:missing-punch`,
-      details: { workDate: workDate.toISOString().slice(0, 10) },
+      details: { workDate: workDateText },
     });
   }
   if (invalidSequence) {
     exceptions.push({
-      tenantId: event.tenantId,
+      tenantId,
       employeeId,
       attendanceDayId: day.id,
-      importJobId: event.importJobId,
+      importJobId,
       type: 'DUPLICATE_PUNCH',
       severity: 'MEDIUM',
       payrollImpact: 'REVIEW_REQUIRED',
       dedupeKey: `day:${day.id}:invalid-sequence`,
-      details: { workDate: workDate.toISOString().slice(0, 10) },
+      details: { workDate: workDateText },
+    });
+  }
+  if (dayType === 'WORKING' && lateMinutes > 0) {
+    exceptions.push({
+      tenantId,
+      employeeId,
+      attendanceDayId: day.id,
+      importJobId,
+      type: 'LATE_ARRIVAL',
+      severity: 'MEDIUM',
+      payrollImpact: 'REVIEW_REQUIRED',
+      payrollImpactMinutes: lateMinutes,
+      dedupeKey: `day:${day.id}:late-arrival`,
+      details: { workDate: workDateText, graceMinutes: rules.lateArrival.graceMinutes },
+    });
+  }
+  if (dayType === 'WORKING' && earlyDepartureMinutes > 0) {
+    exceptions.push({
+      tenantId,
+      employeeId,
+      attendanceDayId: day.id,
+      importJobId,
+      type: 'EARLY_DEPARTURE',
+      severity: 'MEDIUM',
+      payrollImpact: 'REVIEW_REQUIRED',
+      payrollImpactMinutes: earlyDepartureMinutes,
+      dedupeKey: `day:${day.id}:early-departure`,
+      details: { workDate: workDateText, graceMinutes: rules.earlyDeparture.graceMinutes },
+    });
+  }
+  if (overtimeMinutes > 0) {
+    exceptions.push({
+      tenantId,
+      employeeId,
+      attendanceDayId: day.id,
+      importJobId,
+      type: 'OVERTIME',
+      severity: 'LOW',
+      payrollImpact: 'REVIEW_REQUIRED',
+      payrollImpactMinutes: overtimeMinutes,
+      dedupeKey: `day:${day.id}:overtime`,
+      details: { workDate: workDateText, thresholdMinutes: rules.overtime.thresholdMinutes },
+    });
+  }
+  if (isFullAbsence) {
+    exceptions.push({
+      tenantId,
+      employeeId,
+      attendanceDayId: day.id,
+      importJobId,
+      type: 'ABSENCE',
+      severity: 'HIGH',
+      payrollImpact: rules.absence.lop ? 'UNPAID_MINUTES' : 'REVIEW_REQUIRED',
+      payrollImpactMinutes: scheduledMinutes,
+      dedupeKey: `day:${day.id}:absence`,
+      details: { workDate: workDateText, kind: 'FULL', scheduledMinutes },
+    });
+  } else if (isPartialUnderHalfDay) {
+    exceptions.push({
+      tenantId,
+      employeeId,
+      attendanceDayId: day.id,
+      importJobId,
+      type: 'ABSENCE',
+      severity: 'MEDIUM',
+      payrollImpact: rules.absence.lop ? 'UNPAID_MINUTES' : 'REVIEW_REQUIRED',
+      payrollImpactMinutes: Math.max(0, scheduledMinutes - workedMinutes),
+      dedupeKey: `day:${day.id}:absence`,
+      details: {
+        workDate: workDateText,
+        kind: 'PARTIAL',
+        halfDayThresholdMinutes: rules.halfDay.halfDayThresholdMinutes,
+        workedMinutes,
+      },
     });
   }
   const created = exceptions.length
