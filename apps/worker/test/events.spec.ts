@@ -85,7 +85,7 @@ describe('attendance event contracts', () => {
       },
     );
     expect(parseAttendanceEvent(event)).toEqual(event);
-    expect((event as Record<string, unknown>).periodId).toBeUndefined();
+    expect((event as unknown as Record<string, unknown>).periodId).toBeUndefined();
   });
 
   it('accepts a recompute-completed v1 envelope', () => {
