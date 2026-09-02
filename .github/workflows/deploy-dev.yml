@@ -1,0 +1,97 @@
+name: Deploy development
+
+on:
+  workflow_dispatch:
+    inputs:
+      callback_url:
+        description: Optional additional HTTPS Cognito callback URL
+        required: false
+        type: string
+      run_authenticated_e2e:
+        description: Run isolated authenticated import/payroll E2E
+        required: true
+        default: false
+        type: boolean
+      run_period_race:
+        description: Include the opt-in worker scaling period-version race
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: attendance-development-deployment
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run e2e:local
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.AWS_DEV_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_DEV_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEV_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_DEV_REGION }}
+      - name: Assert immutable development environment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] ||
+            { echo "AWS_DEV_ACCOUNT_ID is not configured"; exit 1; }
+          [[ "$AWS_REGION" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]$ ]] ||
+            { echo "AWS_DEV_REGION is not configured"; exit 1; }
+          [[ "${{ vars.AWS_DEV_ROLE_ARN }}" == "arn:aws:iam::$AWS_ACCOUNT_ID:"* ]] ||
+            { echo "AWS_DEV_ROLE_ARN does not belong to AWS_DEV_ACCOUNT_ID"; exit 1; }
+      - name: Deploy migration-first development stack
+        shell: bash
+        env:
+          CALLBACK_URL: ${{ inputs.callback_url }}
+        run: |
+          set -euo pipefail
+          args=(--stage dev --account "$AWS_ACCOUNT_ID" --region "$AWS_REGION")
+          if [[ -n "$CALLBACK_URL" ]]; then
+            args+=(--callback-url "$CALLBACK_URL" --logout-url "$CALLBACK_URL")
+          fi
+          node scripts/deploy-dev.mjs "${args[@]}"
+      - name: Validate deployed infrastructure and application
+        shell: bash
+        env:
+          E2E_BEARER_TOKEN: ${{ secrets.E2E_BEARER_TOKEN }}
+          E2E_TENANT_ID: ${{ vars.E2E_TENANT_ID }}
+          E2E_PERIOD_ID: ${{ vars.E2E_PERIOD_ID }}
+        run: |
+          set -euo pipefail
+          args=(--stage dev --account "$AWS_ACCOUNT_ID" --region "$AWS_REGION")
+          if [[ "${{ inputs.run_authenticated_e2e }}" == "true" ]]; then
+            args+=(--authenticated)
+          fi
+          if [[ "${{ inputs.run_period_race }}" == "true" ]]; then
+            args+=(--period-race)
+          fi
+          node scripts/e2e-dev.mjs "${args[@]}"

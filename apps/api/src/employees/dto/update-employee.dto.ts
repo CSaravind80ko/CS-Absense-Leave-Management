@@ -1,6 +1,7 @@
 import {
   IsEmail,
   IsEnum,
+  IsDateString,
   IsOptional,
   IsString,
   IsUUID,
@@ -9,6 +10,11 @@ import {
 import { EmployeeStatus } from '@prisma/client';
 
 export class UpdateEmployeeDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 50)
+  employeeNumber?: string;
+
   @IsOptional()
   @IsString()
   @Length(1, 100)
@@ -38,4 +44,8 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsEnum(EmployeeStatus)
   status?: EmployeeStatus;
+
+  @IsOptional()
+  @IsDateString({ strict: true })
+  hireDate?: string;
 }
