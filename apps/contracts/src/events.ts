@@ -4,7 +4,19 @@ export const EVENT_TYPES = [
   'attendance.import.completed.v1',
   'payroll.export.requested.v1',
   'payroll.export.completed.v1',
+  'attendance.day.recompute-requested.v1',
+  'attendance.day.recompute-completed.v1',
 ] as const;
+
+export const POLICY_SCOPE_TYPES = [
+  'TENANT',
+  'LOCATION',
+  'DEPARTMENT',
+  'EMPLOYEE_GROUP',
+  'EMPLOYEE',
+] as const;
+
+export type PolicyScopeType = (typeof POLICY_SCOPE_TYPES)[number];
 
 export type AttendanceEventType = (typeof EVENT_TYPES)[number];
 
@@ -78,12 +90,35 @@ export interface PayrollExportCompletedEvent extends EventEnvelope {
   errorCode: string | null;
 }
 
+export interface AttendanceDayRecomputeRequestedEvent extends EventEnvelope {
+  eventType: 'attendance.day.recompute-requested.v1';
+  recomputeJobId: string;
+  scopeType: PolicyScopeType;
+  scopeId: string;
+  dateFrom: string;
+  dateTo: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+export interface AttendanceDayRecomputeCompletedEvent extends EventEnvelope {
+  eventType: 'attendance.day.recompute-completed.v1';
+  recomputeJobId: string;
+  status: 'COMPLETED' | 'FAILED';
+  daysMatched: number;
+  daysRecomputed: number;
+  exceptionsOpened: number;
+  errorCode: string | null;
+}
+
 export type AttendanceEvent =
   | AttendanceImportRequestedEvent
   | AttendanceImportFileReadyEvent
   | AttendanceImportCompletedEvent
   | PayrollExportRequestedEvent
-  | PayrollExportCompletedEvent;
+  | PayrollExportCompletedEvent
+  | AttendanceDayRecomputeRequestedEvent
+  | AttendanceDayRecomputeCompletedEvent;
 
 type EventPayload<T extends AttendanceEvent> = Omit<
   T,
@@ -142,11 +177,14 @@ export function parseAttendanceEvent(value: unknown): AttendanceEvent {
   ) {
     throw new Error(`Unsupported eventType: ${String(value.eventType)}`);
   }
-  for (const key of ['eventId', 'eventType', 'occurredAt', 'tenantId', 'periodId']) {
+  for (const key of ['eventId', 'eventType', 'occurredAt', 'tenantId']) {
     requireString(value, key);
   }
   if (Number.isNaN(Date.parse(value.occurredAt as string))) {
     throw new Error('Invalid event field: occurredAt');
+  }
+  if (eventType.startsWith('attendance.import.') || eventType.startsWith('payroll.export.')) {
+    requireString(value, 'periodId');
   }
   if (eventType.startsWith('attendance.import.')) {
     requireString(value, 'importJobId');
@@ -180,7 +218,7 @@ export function parseAttendanceEvent(value: unknown): AttendanceEvent {
     if (value.format !== 'CSV' && value.format !== 'XLSX') {
       throw new Error('Invalid event field: format');
     }
-  } else {
+  } else if (eventType === 'payroll.export.completed.v1') {
     requireString(value, 'payrollExportId');
     requireNumber(value, 'periodVersion');
     requireNumber(value, 'itemCount');
@@ -196,6 +234,27 @@ export function parseAttendanceEvent(value: unknown): AttendanceEvent {
     } else if (value.object !== null) {
       throw new Error('Invalid event field: object');
     }
+  } else if (eventType === 'attendance.day.recompute-requested.v1') {
+    requireString(value, 'recomputeJobId');
+    requireString(value, 'scopeId');
+    requireString(value, 'requestedBy');
+    requireString(value, 'requestedAt');
+    requireString(value, 'dateFrom');
+    requireString(value, 'dateTo');
+    if (!POLICY_SCOPE_TYPES.includes(value.scopeType as PolicyScopeType)) {
+      throw new Error('Invalid event field: scopeType');
+    }
+  } else if (eventType === 'attendance.day.recompute-completed.v1') {
+    requireString(value, 'recomputeJobId');
+    for (const key of ['daysMatched', 'daysRecomputed', 'exceptionsOpened']) {
+      requireNumber(value, key);
+    }
+    if (value.status !== 'COMPLETED' && value.status !== 'FAILED') {
+      throw new Error('Invalid event field: status');
+    }
+    requireNullableString(value, 'errorCode');
+  } else {
+    throw new Error(`Unhandled eventType: ${eventType}`);
   }
   return value as unknown as AttendanceEvent;
 }

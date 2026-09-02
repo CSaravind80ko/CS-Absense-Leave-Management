@@ -160,6 +160,10 @@ Import and payroll export screens are intentionally metadata-only until Layer 2 
 
 Set `SEED_ATTENDANCE_DEMO=true` only for local evaluation to add deterministic employees, attendance days, punch evidence, one critical exception, and its pending approval. The seed remains disabled by default and contains no credentials.
 
+## Policy and calculation engine
+
+Attendance calculation is driven by immutable, effective-dated `PolicyVersion` records scoped to tenant, location, department, employee group, or employee, resolved with whole-record precedence (the most specific applicable scope wins entirely). The worker evaluates late arrival, early departure, overtime, holiday/weekend calendars, and full/half-day LOP against the resolved policy, and records a structured calculation trace on each `AttendanceDay`. Publishing a policy version or changing employee-group membership triggers selective async reprocessing through the existing outbox/worker pipeline. See `docs/policy-calculation-engine.md` for the full data model, precedence algorithm, exception dedupe-key table, and API routes. Set `SEED_POLICY_ENGINE_DEMO=true` for a local evaluation fixture (an overriding employee-group policy and a demo holiday).
+
 ## Commands
 
 | Command | Purpose |

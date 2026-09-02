@@ -9,10 +9,12 @@ import { IdentityTokenVerifier } from './auth/identity-token-verifier.service';
 import { IdentityAuthGuard } from './common/guards/identity-auth.guard';
 import { TenantGuard } from './common/guards/tenant.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { EmployeeGroupsModule } from './employee-groups/employee-groups.module';
 import { EmployeesModule } from './employees/employees.module';
 import { ExceptionsModule } from './exceptions/exceptions.module';
 import { HealthController } from './health/health.controller';
 import { PayrollModule } from './payroll/payroll.module';
+import { PoliciesModule } from './policies/policies.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { MeModule } from './me/me.module';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
@@ -27,6 +29,8 @@ import { ScimModule } from './scim/scim.module';
     ExceptionsModule,
     ApprovalsModule,
     PayrollModule,
+    PoliciesModule,
+    EmployeeGroupsModule,
     MeModule,
     TenantUsersModule,
     SamlConnectionsModule,
