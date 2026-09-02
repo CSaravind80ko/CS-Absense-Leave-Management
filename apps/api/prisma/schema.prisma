@@ -12,6 +12,45 @@ enum TenantStatus {
   SUSPENDED
 }
 
+enum IdentityConnectionType {
+  SHARED_COGNITO
+  DEDICATED_COGNITO
+}
+
+enum IdentityConnectionStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum IdentityMfaPolicy {
+  OPTIONAL
+  REQUIRED
+}
+
+enum SamlConnectionStatus {
+  DRAFT
+  METADATA_VALID
+  PROVISIONING
+  READY
+  ACTIVE
+  DISABLED
+  ERROR
+}
+
+enum TenantUserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+  PASSWORD_RESET_REQUIRED
+}
+
+enum UserInvitationStatus {
+  SENT
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
 enum ApplicationRole {
   TENANT_ADMIN
   HR_ADMIN
@@ -73,6 +112,9 @@ enum ExceptionType {
   OVERTIME
   ABSENCE
   DUPLICATE_PUNCH
+  UNKNOWN_EMPLOYEE
+  INACTIVE_EMPLOYEE
+  OUT_OF_PERIOD
   OUT_OF_LOCATION
   OTHER
 }
@@ -81,6 +123,20 @@ enum ExceptionStatus {
   OPEN
   RESOLVED
   DISMISSED
+}
+
+enum ExceptionSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum PayrollImpact {
+  NONE
+  REVIEW_REQUIRED
+  UNPAID_MINUTES
+  BLOCKED
 }
 
 enum ApprovalType {
@@ -112,47 +168,362 @@ enum PayrollExportStatus {
   DELIVERED
 }
 
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+}
+
+enum EventLedgerStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum PolicyScopeType {
+  TENANT
+  LOCATION
+  DEPARTMENT
+  EMPLOYEE_GROUP
+  EMPLOYEE
+}
+
+enum PolicyVersionStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum PolicyRecomputeStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model Tenant {
-  id               String                 @id @default(uuid()) @db.Uuid
-  name             String
-  slug             String                 @unique
-  status           TenantStatus           @default(ACTIVE)
-  timezone         String                 @default("UTC")
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  memberships      TenantMembership[]
-  departments      Department[]
-  locations        Location[]
-  shifts           Shift[]
-  employees        Employee[]
-  periods          ProcessingPeriod[]
-  importJobs       AttendanceImportJob[]
-  importFiles      AttendanceImportFile[]
-  importRows       AttendanceImportRow[]
-  punches          AttendancePunch[]
-  attendanceDays   AttendanceDay[]
-  exceptions       AttendanceException[]
-  approvalRequests ApprovalRequest[]
-  approvalActions  ApprovalAction[]
-  payrollExports   PayrollExport[]
-  payrollItems     PayrollExportItem[]
-  auditEvents      AuditEvent[]
+  id                  String                       @id @default(uuid()) @db.Uuid
+  name                String
+  slug                String                       @unique
+  status              TenantStatus                 @default(ACTIVE)
+  timezone            String                       @default("UTC")
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  memberships         TenantMembership[]
+  identityConnections IdentityConnection[]
+  externalIdentities  ExternalIdentity[]
+  userInvitations     UserInvitation[]
+  departments         Department[]
+  locations           Location[]
+  shifts              Shift[]
+  employees           Employee[]
+  periods             ProcessingPeriod[]
+  importJobs          AttendanceImportJob[]
+  importUploads       AttendanceImportUpload[]
+  importFiles         AttendanceImportFile[]
+  importRows          AttendanceImportRow[]
+  punches             AttendancePunch[]
+  attendanceDays      AttendanceDay[]
+  exceptions          AttendanceException[]
+  approvalRequests    ApprovalRequest[]
+  approvalActions     ApprovalAction[]
+  payrollExports      PayrollExport[]
+  payrollItems        PayrollExportItem[]
+  auditEvents         AuditEvent[]
+  outboxEvents        OutboxEvent[]
+  eventLedger         EventLedger[]
+  samlConnections     SamlConnection[]
+  scimConnections     ScimProvisioningConnection[]
+  scimUsers           ScimUser[]
+  scimGroups          ScimGroup[]
+  scimCredentials     ScimCredential[]
+  policyVersions      PolicyVersion[]
+  employeeGroups      EmployeeGroup[]
+  holidays            Holiday[]
+  policyRecomputeJobs PolicyRecomputeJob[]
 }
 
 model TenantMembership {
-  id             String          @id @default(uuid()) @db.Uuid
-  tenantId       String          @db.Uuid
-  cognitoSubject String
-  email          String?
-  role           ApplicationRole
-  active         Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @db.Uuid
+  cognitoSubject     String?
+  email              String?
+  role               ApplicationRole
+  active             Boolean            @default(true)
+  lifecycleStatus    TenantUserStatus   @default(ACTIVE)
+  mfaRequired        Boolean            @default(false)
+  invitedAt          DateTime?
+  disabledAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  externalIdentities ExternalIdentity[]
+  invitations        UserInvitation[]
+  scimUsers          ScimUser[]
 
   @@unique([tenantId, cognitoSubject])
+  @@unique([id, tenantId])
   @@index([cognitoSubject, active])
   @@index([tenantId, role])
+}
+
+model IdentityConnection {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  tenantId              String?                      @db.Uuid
+  type                  IdentityConnectionType
+  status                IdentityConnectionStatus     @default(ACTIVE)
+  issuer                String                       @unique
+  clientId              String
+  authorizationEndpoint String
+  tokenEndpoint         String
+  endSessionEndpoint    String
+  discoverySlug         String?                      @unique
+  verifiedDomains       String[]                     @default([])
+  scopes                String[]                     @default(["openid", "email", "profile"])
+  isDefault             Boolean                      @default(false)
+  clientSecretReference String?
+  cognitoUserPoolId     String
+  awsRegion             String
+  mfaPolicy             IdentityMfaPolicy            @default(OPTIONAL)
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+  tenant                Tenant?                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  externalIdentities    ExternalIdentity[]
+  userInvitations       UserInvitation[]
+  samlConnections       SamlConnection[]
+  scimConnections       ScimProvisioningConnection[]
+
+  @@index([status, isDefault])
+  @@index([tenantId, status])
+}
+
+model SamlConnection {
+  id                      String                      @id @default(uuid()) @db.Uuid
+  tenantId                String                      @db.Uuid
+  identityConnectionId    String                      @db.Uuid
+  entityId                String?
+  metadataUrl             String?
+  metadataReference       String?
+  certificateFingerprints String[]                    @default([])
+  certificateDetails      Json?
+  cognitoProviderName     String
+  attributeMapping        Json
+  status                  SamlConnectionStatus        @default(DRAFT)
+  metadataValidatedAt     DateTime?
+  provisionedAt           DateTime?
+  testedAt                DateTime?
+  activatedAt             DateTime?
+  disabledAt              DateTime?
+  testResult              Json?
+  lastErrorCode           String?
+  lastErrorMessage        String?
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  tenant                  Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  identityConnection      IdentityConnection          @relation(fields: [identityConnectionId], references: [id], onDelete: Restrict)
+  scimConnection          ScimProvisioningConnection?
+
+  @@unique([tenantId, identityConnectionId])
+  @@unique([identityConnectionId, cognitoProviderName])
+  @@unique([id, tenantId, identityConnectionId])
+  @@index([tenantId, status])
+}
+
+model ExternalIdentity {
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @db.Uuid
+  tenantMembershipId String             @db.Uuid
+  connectionId       String             @db.Uuid
+  providerSubject    String
+  providerUsername   String?
+  createdAt          DateTime           @default(now())
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantMembership   TenantMembership   @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
+  connection         IdentityConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  scimUser           ScimUser?
+
+  @@unique([connectionId, providerSubject, tenantId])
+  @@unique([tenantMembershipId, connectionId])
+  @@unique([id, tenantId, tenantMembershipId, connectionId])
+  @@index([connectionId, providerSubject])
+  @@index([tenantId, tenantMembershipId])
+}
+
+model ScimProvisioningConnection {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  tenantId             String                  @db.Uuid
+  samlConnectionId     String                  @unique @db.Uuid
+  identityConnectionId String                  @db.Uuid
+  enabled              Boolean                 @default(true)
+  defaultRole          ApplicationRole         @default(EMPLOYEE)
+  privilegedRolePolicy Boolean                 @default(false)
+  enabledAt            DateTime                @default(now())
+  disabledAt           DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  tenant               Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  samlConnection       SamlConnection          @relation(fields: [samlConnectionId, tenantId, identityConnectionId], references: [id, tenantId, identityConnectionId], onDelete: Restrict)
+  identityConnection   IdentityConnection      @relation(fields: [identityConnectionId], references: [id], onDelete: Restrict)
+  credentials          ScimCredential[]
+  users                ScimUser[]
+  groups               ScimGroup[]
+  roleMappings         ScimGroupRoleMapping[]
+  idempotencyRecords   ScimIdempotencyRecord[]
+
+  @@unique([id, tenantId])
+  @@unique([id, tenantId, identityConnectionId])
+  @@unique([samlConnectionId, tenantId, identityConnectionId])
+  @@index([tenantId, enabled])
+  @@index([identityConnectionId, enabled])
+}
+
+model ScimCredential {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  tokenPrefix              String
+  tokenHash                String
+  tokenSalt                String
+  label                    String
+  expiresAt                DateTime?
+  lastUsedAt               DateTime?
+  lastUsedIp               String?
+  revokedAt                DateTime?
+  createdBySubject         String
+  revokedBySubject         String?
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  tenant                   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([provisioningConnectionId, tokenPrefix])
+  @@index([tenantId, provisioningConnectionId, revokedAt])
+  @@index([expiresAt])
+}
+
+model ScimUser {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  identityConnectionId     String                     @db.Uuid
+  tenantMembershipId       String                     @db.Uuid
+  externalIdentityId       String                     @unique @db.Uuid
+  externalId               String?
+  userName                 String
+  normalizedUserName       String
+  givenName                String?
+  familyName               String?
+  formattedName            String?
+  emails                   Json
+  primaryEmail             String?
+  active                   Boolean                    @default(true)
+  deletedAt                DateTime?
+  version                  Int                        @default(1)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  tenant                   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId, identityConnectionId], references: [id, tenantId, identityConnectionId], onDelete: Restrict)
+  tenantMembership         TenantMembership           @relation(fields: [tenantMembershipId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  externalIdentity         ExternalIdentity           @relation(fields: [externalIdentityId, tenantId, tenantMembershipId, identityConnectionId], references: [id, tenantId, tenantMembershipId, connectionId], onDelete: Restrict)
+  groupMemberships         ScimGroupMember[]
+
+  @@unique([id, tenantId, provisioningConnectionId])
+  @@unique([provisioningConnectionId, normalizedUserName])
+  @@unique([provisioningConnectionId, externalId])
+  @@unique([provisioningConnectionId, tenantMembershipId])
+  @@unique([externalIdentityId, tenantId, tenantMembershipId, identityConnectionId])
+  @@index([tenantId, provisioningConnectionId, active])
+  @@index([tenantMembershipId])
+}
+
+model ScimGroup {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  externalId               String?
+  displayName              String
+  normalizedDisplayName    String
+  version                  Int                        @default(1)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  tenant                   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  members                  ScimGroupMember[]
+  roleMapping              ScimGroupRoleMapping?
+
+  @@unique([id, tenantId, provisioningConnectionId])
+  @@unique([provisioningConnectionId, normalizedDisplayName])
+  @@unique([provisioningConnectionId, externalId])
+  @@index([tenantId, provisioningConnectionId])
+}
+
+model ScimGroupMember {
+  tenantId                 String    @db.Uuid
+  provisioningConnectionId String    @db.Uuid
+  groupId                  String    @db.Uuid
+  userId                   String    @db.Uuid
+  createdAt                DateTime  @default(now())
+  group                    ScimGroup @relation(fields: [groupId, tenantId, provisioningConnectionId], references: [id, tenantId, provisioningConnectionId], onDelete: Cascade)
+  user                     ScimUser  @relation(fields: [userId, tenantId, provisioningConnectionId], references: [id, tenantId, provisioningConnectionId], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([tenantId, provisioningConnectionId, userId])
+}
+
+model ScimGroupRoleMapping {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  groupId                  String                     @unique @db.Uuid
+  role                     ApplicationRole
+  privilegedConfirmedAt    DateTime?
+  privilegedConfirmedBy    String?
+  createdBySubject         String
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  group                    ScimGroup                  @relation(fields: [groupId, tenantId, provisioningConnectionId], references: [id, tenantId, provisioningConnectionId], onDelete: Cascade)
+
+  @@unique([groupId, tenantId, provisioningConnectionId])
+  @@index([tenantId, provisioningConnectionId, role])
+}
+
+model ScimIdempotencyRecord {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  tenantId                 String                     @db.Uuid
+  provisioningConnectionId String                     @db.Uuid
+  idempotencyKey           String
+  requestHash              String
+  method                   String
+  requestPath              String
+  responseStatus           Int
+  responseBody             Json
+  expiresAt                DateTime
+  createdAt                DateTime                   @default(now())
+  provisioningConnection   ScimProvisioningConnection @relation(fields: [provisioningConnectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([provisioningConnectionId, idempotencyKey])
+  @@index([expiresAt])
+}
+
+model UserInvitation {
+  id                 String               @id @default(uuid()) @db.Uuid
+  tenantId           String               @db.Uuid
+  tenantMembershipId String               @db.Uuid
+  connectionId       String               @db.Uuid
+  email              String
+  status             UserInvitationStatus @default(SENT)
+  sentAt             DateTime             @default(now())
+  lastSentAt         DateTime             @default(now())
+  resendCount        Int                  @default(0)
+  acceptedAt         DateTime?
+  createdBySubject   String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantMembership   TenantMembership     @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
+  connection         IdentityConnection   @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status])
+  @@index([tenantMembershipId, status])
 }
 
 model Department {
@@ -185,6 +556,7 @@ model Location {
   employees Employee[]
   shifts    Shift[]
   punches   AttendancePunch[]
+  holidays  Holiday[]
 
   @@unique([tenantId, code])
   @@index([tenantId, name])
@@ -212,32 +584,34 @@ model Shift {
 }
 
 model Employee {
-  id              String                @id @default(uuid()) @db.Uuid
-  tenantId        String                @db.Uuid
-  employeeNumber  String
-  cognitoSubject  String?
-  firstName       String
-  lastName        String
-  email           String?
-  departmentId    String?               @db.Uuid
-  locationId      String?               @db.Uuid
-  shiftId         String?               @db.Uuid
-  status          EmployeeStatus        @default(ACTIVE)
-  hireDate        DateTime?             @db.Date
-  terminationDate DateTime?             @db.Date
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  department      Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  location        Location?             @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  shift           Shift?                @relation(fields: [shiftId], references: [id], onDelete: SetNull)
-  punches         AttendancePunch[]
-  attendanceDays  AttendanceDay[]
-  exceptions      AttendanceException[]
-  payrollItems    PayrollExportItem[]
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @db.Uuid
+  employeeNumber   String
+  cognitoSubject   String?
+  firstName        String
+  lastName         String
+  email            String?
+  departmentId     String?               @db.Uuid
+  locationId       String?               @db.Uuid
+  shiftId          String?               @db.Uuid
+  status           EmployeeStatus        @default(ACTIVE)
+  hireDate         DateTime?             @db.Date
+  terminationDate  DateTime?             @db.Date
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department       Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  location         Location?             @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  shift            Shift?                @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  punches          AttendancePunch[]
+  attendanceDays   AttendanceDay[]
+  exceptions       AttendanceException[]
+  payrollItems     PayrollExportItem[]
+  groupMemberships EmployeeGroupMember[]
 
   @@unique([tenantId, employeeNumber])
   @@unique([tenantId, cognitoSubject])
+  @@unique([id, tenantId])
   @@index([tenantId, status])
   @@index([tenantId, departmentId])
   @@index([tenantId, locationId])
@@ -250,7 +624,10 @@ model ProcessingPeriod {
   startsOn         DateTime              @db.Date
   endsOn           DateTime              @db.Date
   status           PeriodStatus          @default(OPEN)
+  version          Int                   @default(1)
   lockedAt         DateTime?
+  reopenedAt       DateTime?
+  reopenReason     String?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -260,27 +637,58 @@ model ProcessingPeriod {
   payrollExports   PayrollExport[]
 
   @@unique([tenantId, startsOn, endsOn])
+  @@unique([id, tenantId])
   @@index([tenantId, status])
 }
 
 model AttendanceImportJob {
-  id           String                 @id @default(uuid()) @db.Uuid
-  tenantId     String                 @db.Uuid
-  periodId     String                 @db.Uuid
-  requestedBy  String
-  source       String
-  status       ImportStatus           @default(PENDING)
-  startedAt    DateTime?
-  completedAt  DateTime?
-  errorMessage String?
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
-  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  period       ProcessingPeriod       @relation(fields: [periodId], references: [id], onDelete: Restrict)
-  files        AttendanceImportFile[]
+  id                    String                  @id @default(uuid()) @db.Uuid
+  tenantId              String                  @db.Uuid
+  periodId              String                  @db.Uuid
+  requestedBy           String
+  source                String
+  status                ImportStatus            @default(PENDING)
+  acceptedRows          Int                     @default(0)
+  rejectedRows          Int                     @default(0)
+  punchesUpserted       Int                     @default(0)
+  attendanceDaysUpdated Int                     @default(0)
+  exceptionsOpened      Int                     @default(0)
+  errorCode             String?
+  errorMessage          String?
+  startedAt             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  tenant                Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period                ProcessingPeriod        @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  upload                AttendanceImportUpload?
+  files                 AttendanceImportFile[]
+  exceptions            AttendanceException[]
 
+  @@unique([id, tenantId])
   @@index([tenantId, periodId, status])
   @@index([tenantId, createdAt])
+}
+
+model AttendanceImportUpload {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @db.Uuid
+  importJobId    String              @db.Uuid
+  fileName       String
+  storageKey     String
+  contentType    String
+  sizeBytes      BigInt
+  checksumSha256 String
+  expiresAt      DateTime
+  finalizedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  importJob      AttendanceImportJob @relation(fields: [importJobId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([importJobId, tenantId])
+  @@unique([tenantId, storageKey])
+  @@unique([id, tenantId])
+  @@index([tenantId, expiresAt])
 }
 
 model AttendanceImportFile {
@@ -294,9 +702,11 @@ model AttendanceImportFile {
   checksum    String
   createdAt   DateTime              @default(now())
   tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  importJob   AttendanceImportJob   @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  importJob   AttendanceImportJob   @relation(fields: [importJobId, tenantId], references: [id, tenantId], onDelete: Cascade)
   rows        AttendanceImportRow[]
 
+  @@unique([id, tenantId])
+  @@unique([tenantId, importJobId])
   @@unique([tenantId, storageKey])
   @@index([tenantId, importJobId])
 }
@@ -307,13 +717,16 @@ model AttendanceImportRow {
   fileId          String               @db.Uuid
   rowNumber       Int
   rawData         Json
+  canonicalData   Json?
   status          RowStatus            @default(PENDING)
+  errorCode       String?
   validationError String?
   createdAt       DateTime             @default(now())
   tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  file            AttendanceImportFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  file            AttendanceImportFile @relation(fields: [fileId, tenantId], references: [id, tenantId], onDelete: Cascade)
   punches         AttendancePunch[]
 
+  @@unique([id, tenantId])
   @@unique([tenantId, fileId, rowNumber])
   @@index([tenantId, status])
 }
@@ -331,11 +744,12 @@ model AttendancePunch {
   metadata    Json?
   createdAt   DateTime             @default(now())
   tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  employee    Employee             @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  importRow   AttendanceImportRow? @relation(fields: [importRowId], references: [id], onDelete: SetNull)
+  employee    Employee             @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  importRow   AttendanceImportRow? @relation(fields: [importRowId, tenantId], references: [id, tenantId], onDelete: Restrict)
   location    Location?            @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, source, externalId])
+  @@unique([id, tenantId])
   @@index([tenantId, employeeId, occurredAt])
   @@index([tenantId, importRowId])
 }
@@ -351,58 +765,85 @@ model AttendanceDay {
   workedMinutes    Int                   @default(0)
   overtimeMinutes  Int                   @default(0)
   lateMinutes      Int                   @default(0)
+  firstPunchAt     DateTime?
+  lastPunchAt      DateTime?
+  sourceSummary    Json?
+  policyVersionId  String?               @db.Uuid
+  calculationTrace Json?
+  version          Int                   @default(1)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  period           ProcessingPeriod      @relation(fields: [periodId], references: [id], onDelete: Restrict)
-  employee         Employee              @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  period           ProcessingPeriod      @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  employee         Employee              @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  policyVersion    PolicyVersion?        @relation(fields: [policyVersionId, tenantId], references: [id, tenantId], onDelete: Restrict)
   exceptions       AttendanceException[]
 
   @@unique([tenantId, employeeId, workDate])
+  @@unique([id, tenantId])
   @@index([tenantId, periodId])
   @@index([tenantId, status])
+  @@index([tenantId, policyVersionId])
 }
 
 model AttendanceException {
-  id               String            @id @default(uuid()) @db.Uuid
-  tenantId         String            @db.Uuid
-  attendanceDayId  String?           @db.Uuid
-  employeeId       String            @db.Uuid
-  type             ExceptionType
-  status           ExceptionStatus   @default(OPEN)
-  details          Json?
-  resolutionNote   String?
-  resolvedBy       String?
-  resolvedAt       DateTime?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  attendanceDay    AttendanceDay?    @relation(fields: [attendanceDayId], references: [id], onDelete: SetNull)
-  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  approvalRequests ApprovalRequest[]
+  id                   String               @id @default(uuid()) @db.Uuid
+  tenantId             String               @db.Uuid
+  attendanceDayId      String?              @db.Uuid
+  employeeId           String?              @db.Uuid
+  importJobId          String?              @db.Uuid
+  dedupeKey            String?
+  type                 ExceptionType
+  status               ExceptionStatus      @default(OPEN)
+  severity             ExceptionSeverity    @default(MEDIUM)
+  payrollImpact        PayrollImpact        @default(REVIEW_REQUIRED)
+  payrollImpactMinutes Int                  @default(0)
+  assignedToSubject    String?
+  assignedToRole       ApplicationRole?
+  version              Int                  @default(1)
+  details              Json?
+  resolutionNote       String?
+  resolvedBy           String?
+  resolvedAt           DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  attendanceDay        AttendanceDay?       @relation(fields: [attendanceDayId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  employee             Employee?            @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  importJob            AttendanceImportJob? @relation(fields: [importJobId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  approvalRequests     ApprovalRequest[]
 
+  @@unique([id, tenantId])
+  @@unique([tenantId, dedupeKey])
   @@index([tenantId, status, type])
+  @@index([tenantId, status, severity, payrollImpact])
+  @@index([tenantId, assignedToSubject, status])
   @@index([tenantId, employeeId, createdAt])
 }
 
 model ApprovalRequest {
-  id             String               @id @default(uuid()) @db.Uuid
-  tenantId       String               @db.Uuid
-  type           ApprovalType
-  status         ApprovalStatus       @default(PENDING)
-  periodId       String?              @db.Uuid
-  exceptionId    String?              @db.Uuid
-  requestedBy    String
-  currentStep    Int                  @default(1)
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  tenant         Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  period         ProcessingPeriod?    @relation(fields: [periodId], references: [id], onDelete: Restrict)
-  exception      AttendanceException? @relation(fields: [exceptionId], references: [id], onDelete: Restrict)
-  actions        ApprovalAction[]
-  payrollExports PayrollExport[]
+  id              String               @id @default(uuid()) @db.Uuid
+  tenantId        String               @db.Uuid
+  type            ApprovalType
+  status          ApprovalStatus       @default(PENDING)
+  periodId        String?              @db.Uuid
+  exceptionId     String?              @db.Uuid
+  requestedBy     String
+  assigneeSubject String?
+  assigneeRole    ApplicationRole?
+  currentStep     Int                  @default(1)
+  version         Int                  @default(1)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period          ProcessingPeriod?    @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  exception       AttendanceException? @relation(fields: [exceptionId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  actions         ApprovalAction[]
+  payrollExports  PayrollExport[]
 
+  @@unique([id, tenantId])
   @@index([tenantId, status, type])
+  @@index([tenantId, assigneeSubject, status])
   @@index([tenantId, periodId])
   @@index([tenantId, exceptionId])
 }
@@ -416,7 +857,7 @@ model ApprovalAction {
   comment           String?
   createdAt         DateTime           @default(now())
   tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  approvalRequest   ApprovalRequest    @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+  approvalRequest   ApprovalRequest    @relation(fields: [approvalRequestId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId, approvalRequestId, createdAt])
   @@index([tenantId, actorSubject])
@@ -426,20 +867,26 @@ model PayrollExport {
   id                String              @id @default(uuid()) @db.Uuid
   tenantId          String              @db.Uuid
   periodId          String              @db.Uuid
+  periodVersion     Int
   approvalRequestId String?             @db.Uuid
   format            String
   status            PayrollExportStatus @default(DRAFT)
+  version           Int                 @default(1)
   storageKey        String?
+  storageBucket     String?
   checksum          String?
+  sizeBytes         BigInt?
+  errorCode         String?
   requestedBy       String
   generatedAt       DateTime?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  period            ProcessingPeriod    @relation(fields: [periodId], references: [id], onDelete: Restrict)
-  approvalRequest   ApprovalRequest?    @relation(fields: [approvalRequestId], references: [id], onDelete: Restrict)
+  period            ProcessingPeriod    @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  approvalRequest   ApprovalRequest?    @relation(fields: [approvalRequestId, tenantId], references: [id, tenantId], onDelete: Restrict)
   items             PayrollExportItem[]
 
+  @@unique([id, tenantId])
   @@unique([tenantId, storageKey])
   @@index([tenantId, periodId, status])
 }
@@ -456,8 +903,8 @@ model PayrollExportItem {
   payload         Json?
   createdAt       DateTime      @default(now())
   tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  payrollExport   PayrollExport @relation(fields: [payrollExportId], references: [id], onDelete: Cascade)
-  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  payrollExport   PayrollExport @relation(fields: [payrollExportId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  employee        Employee      @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
   @@unique([tenantId, payrollExportId, employeeId])
   @@index([tenantId, employeeId])
@@ -481,4 +928,157 @@ model AuditEvent {
   @@index([tenantId, occurredAt])
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, actorSubject, occurredAt])
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  eventId       String       @unique @db.Uuid
+  tenantId      String       @db.Uuid
+  aggregateType String
+  aggregateId   String       @db.Uuid
+  eventType     String
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attemptCount  Int          @default(0)
+  availableAt   DateTime     @default(now())
+  publishedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([status, availableAt, createdAt])
+  @@index([tenantId, aggregateType, aggregateId])
+}
+
+model EventLedger {
+  id           String            @id @default(uuid()) @db.Uuid
+  eventId      String            @unique @db.Uuid
+  tenantId     String            @db.Uuid
+  eventType    String
+  status       EventLedgerStatus @default(PROCESSING)
+  attemptCount Int               @default(1)
+  lockedUntil  DateTime?
+  completedAt  DateTime?
+  lastError    String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([status, lockedUntil])
+  @@index([tenantId, eventType, createdAt])
+}
+
+/// Immutable, effective-dated attendance policy version, scoped to exactly one of
+/// TENANT/LOCATION/DEPARTMENT/EMPLOYEE_GROUP/EMPLOYEE. Precedence resolution picks the
+/// single most specific PUBLISHED version whose effectiveFrom has passed for a given
+/// employee/date (whole-record override, not field-level merge). scopeId is always
+/// populated, even for TENANT scope (scopeId == tenantId), so the unique index below is
+/// well-defined (Postgres treats NULL as distinct in unique indexes).
+model PolicyVersion {
+  id              String               @id @default(uuid()) @db.Uuid
+  tenantId        String               @db.Uuid
+  scopeType       PolicyScopeType
+  scopeId         String               @db.Uuid
+  status          PolicyVersionStatus  @default(DRAFT)
+  name            String
+  effectiveFrom   DateTime             @db.Date
+  workingWeekdays Int[]                @default([1, 2, 3, 4, 5])
+  rules           Json
+  supersedesId    String?              @db.Uuid
+  publishedAt     DateTime?
+  publishedBy     String?
+  createdBy       String
+  version         Int                  @default(1)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supersedes      PolicyVersion?       @relation("PolicyVersionHistory", fields: [supersedesId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  supersededBy    PolicyVersion[]      @relation("PolicyVersionHistory")
+  attendanceDays  AttendanceDay[]
+  recomputeJobs   PolicyRecomputeJob[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, scopeType, scopeId, effectiveFrom])
+  @@index([tenantId, scopeType, scopeId, status, effectiveFrom])
+  @@index([tenantId, status])
+}
+
+/// Scoping group for EMPLOYEE_GROUP-level policy overrides. priority breaks ties when an
+/// employee belongs to more than one group with an applicable policy version (higher wins).
+model EmployeeGroup {
+  id        String                @id @default(uuid()) @db.Uuid
+  tenantId  String                @db.Uuid
+  name      String
+  code      String
+  priority  Int                   @default(0)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members   EmployeeGroupMember[]
+
+  @@unique([tenantId, code])
+  @@unique([id, tenantId])
+  @@index([tenantId, name])
+}
+
+model EmployeeGroupMember {
+  tenantId   String        @db.Uuid
+  groupId    String        @db.Uuid
+  employeeId String        @db.Uuid
+  createdAt  DateTime      @default(now())
+  group      EmployeeGroup @relation(fields: [groupId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  employee   Employee      @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@id([groupId, employeeId])
+  @@index([tenantId, employeeId])
+}
+
+/// A non-working day. A location-specific row (locationId set) takes priority over a
+/// tenant-wide row (locationId null) on the same date. No DB-level uniqueness on
+/// (tenantId, locationId, date) because Postgres treats NULL as distinct in unique
+/// indexes; duplicate prevention for tenant-wide rows is enforced in the service layer.
+model Holiday {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @db.Uuid
+  locationId String?   @db.Uuid
+  date       DateTime  @db.Date
+  name       String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location   Location? @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+  @@index([tenantId, locationId, date])
+}
+
+/// Tracks an async, selective attendance-day recompute triggered by a policy publish or a
+/// group membership/priority change. Structurally mirrors AttendanceImportJob so the
+/// worker's existing claim/complete/fail conventions apply unchanged.
+model PolicyRecomputeJob {
+  id                         String                @id @default(uuid()) @db.Uuid
+  tenantId                   String                @db.Uuid
+  scopeType                  PolicyScopeType
+  scopeId                    String                @db.Uuid
+  dateFrom                   DateTime              @db.Date
+  dateTo                     DateTime              @db.Date
+  reason                     String
+  triggeredByPolicyVersionId String?               @db.Uuid
+  requestedBy                String
+  status                     PolicyRecomputeStatus @default(PENDING)
+  daysMatched                Int                   @default(0)
+  daysRecomputed             Int                   @default(0)
+  exceptionsOpened           Int                   @default(0)
+  errorCode                  String?
+  errorMessage               String?
+  startedAt                  DateTime?
+  completedAt                DateTime?
+  createdAt                  DateTime              @default(now())
+  updatedAt                  DateTime              @updatedAt
+  tenant                     Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  triggeredByPolicyVersion   PolicyVersion?        @relation(fields: [triggeredByPolicyVersionId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
 }

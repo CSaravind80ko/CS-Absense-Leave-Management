@@ -11,7 +11,10 @@ node_modules
 dist
 dist-ssr
 cdk.out
+.deployment
 *.local
+.env
+!.env.example
 
 # Editor directories and files
 .vscode/*

@@ -1,12 +1,17 @@
-import { IsEnum, IsOptional, IsString, Length } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsInt, IsString, Length, Min } from 'class-validator';
 import { ExceptionStatus } from '@prisma/client';
 
 export class DecideExceptionDto {
   @IsEnum(ExceptionStatus)
   decision!: ExceptionStatus;
 
-  @IsOptional()
   @IsString()
-  @Length(1, 1000)
-  note?: string;
+  @Length(3, 1000)
+  note!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  version!: number;
 }

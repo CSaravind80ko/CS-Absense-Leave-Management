@@ -1,13 +1,32 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle, ArrowRight, Bell, CalendarDays, CheckCircle2, ChevronDown,
-  CircleHelp, Clock3, Download, FileUp, Filter, MoreHorizontal, Play,
+  CircleHelp, Clock3, Download, FileUp, Filter, LoaderCircle, MoreHorizontal, Play,
   Plus, Search, Settings2, ShieldCheck, Sparkles, Upload, Users, X,
 } from 'lucide-react'
 import './App.css'
-import { getApiHealth, type ApiHealth } from './lib/api'
+import { AuthGate } from './auth/AuthScreens'
+import { useAuth } from './auth/useAuth'
+import { EmployeesView } from './employees/EmployeesView'
+import { UserManagementView } from './users/UserManagementView'
+import {
+  ApprovalInboxView,
+  AttendanceRegisterView,
+  ExceptionWorkbenchView,
+  ImportCentreView,
+  LiveDashboard,
+  PayrollRegisterView,
+  ProcessingPeriodsView,
+} from './attendance/LiveAttendanceViews'
+import {
+  createApiClient,
+  getApiHealth,
+  type ApiHealth,
+  type ProcessingPeriod,
+  type TenantMembership,
+} from './lib/api'
 
-type View = 'Dashboard' | 'AI Insights' | 'Exception Patterns' | 'My Attendance' | 'Team Approvals' | 'Processing Periods' | 'Data Import Centre' | 'Attendance Register' | 'Exception Workbench' | 'Approval Inbox' | 'Leave & OD' | 'Comp-Off' | 'Payroll Register' | 'Rule Configuration' | 'User & Role Management' | 'Integration Settings' | 'Reports' | 'Audit Trail'
+type View = 'Dashboard' | 'AI Insights' | 'Exception Patterns' | 'My Attendance' | 'Team Approvals' | 'Processing Periods' | 'Data Import Centre' | 'Employees' | 'Attendance Register' | 'Exception Workbench' | 'Approval Inbox' | 'Leave & OD' | 'Comp-Off' | 'Payroll Register' | 'Rule Configuration' | 'User & Role Management' | 'Integration Settings' | 'Reports' | 'Audit Trail'
 type Toast = { message: string; kind?: 'success' | 'warning' } | null
 type Persona = 'Employee' | 'Reporting Manager' | 'HR Operations Lead' | 'HR Manager' | 'VP of HR' | 'CHRO'
 
@@ -15,7 +34,7 @@ const nav: { label: View; group?: string }[] = [
   { label: 'Dashboard' }, { label: 'AI Insights' }, { label: 'Exception Patterns' },
   { label: 'My Attendance', group: 'SELF SERVICE' }, { label: 'Team Approvals' },
   { label: 'Processing Periods', group: 'OPERATIONS' },
-  { label: 'Data Import Centre' }, { label: 'Attendance Register' },
+  { label: 'Data Import Centre' }, { label: 'Employees' }, { label: 'Attendance Register' },
   { label: 'Exception Workbench' }, { label: 'Approval Inbox' },
   { label: 'Leave & OD', group: 'PAYROLL' }, { label: 'Comp-Off' },
   { label: 'Payroll Register' }, { label: 'Rule Configuration', group: 'CONFIGURATION' },
@@ -46,18 +65,81 @@ function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone
 }
 
 function App() {
+  return <AuthGate><AuthenticatedApp /></AuthGate>
+}
+
+function AuthenticatedApp() {
+  const { getAccessToken, signOut } = useAuth()
+  const api = useMemo(() => createApiClient({ getAccessToken }), [getAccessToken])
+  const [tenants, setTenants] = useState<TenantMembership[]>([])
+  const [selectedTenantId, setSelectedTenantId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const loadTenants = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const memberships = await api.getTenants()
+      setTenants(memberships)
+      if (memberships.length === 1) setSelectedTenantId(memberships[0].id)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to retrieve your tenant memberships.')
+    } finally {
+      setLoading(false)
+    }
+  }, [api])
+
+  useEffect(() => { void loadTenants() }, [loadTenants])
+
+  if (loading) return <main className="auth-page"><section className="auth-card"><LoaderCircle className="auth-icon spinner" size={32}/><h1>Loading your organizations</h1><p>Checking tenant memberships and permissions…</p></section></main>
+  if (error) return <main className="auth-page"><section className="auth-card"><AlertTriangle className="auth-icon warning" size={30}/><h1>Organizations could not be loaded</h1><p className="form-error">{error}</p><button className="primary full" onClick={() => void loadTenants()}>Try again</button><button className="text-button auth-signout" onClick={signOut}>Sign out</button></section></main>
+  if (tenants.length === 0) return <main className="auth-page"><section className="auth-card"><Users className="auth-icon" size={30}/><h1>No tenant access</h1><p>Your account is authenticated but has no tenant memberships. Ask an administrator to assign access.</p><button className="secondary full" onClick={signOut}>Sign out</button></section></main>
+  if (!selectedTenantId) return <TenantSelection tenants={tenants} onSelect={setSelectedTenantId} onSignOut={signOut}/>
+
+  return <PrototypeApp tenants={tenants} tenantId={selectedTenantId} onTenantChange={setSelectedTenantId}/>
+}
+
+function TenantSelection({ tenants, onSelect, onSignOut }: { tenants: TenantMembership[]; onSelect: (id: string) => void; onSignOut: () => void }) {
+  return <main className="auth-page"><section className="auth-card tenant-card"><div className="auth-brand">S&P</div><h1>Select an organization</h1><p>Choose the tenant you want to administer.</p><div className="tenant-list">{tenants.map(tenant => <button key={tenant.id} onClick={() => onSelect(tenant.id)}><span><b>{tenant.name}</b><small>{tenant.slug}</small></span><span className="badge blue">{tenant.role.replaceAll('_', ' ').toLowerCase()}</span><ArrowRight size={17}/></button>)}</div><button className="text-button auth-signout" onClick={onSignOut}>Sign out</button></section></main>
+}
+
+function PrototypeApp({ tenants, tenantId, onTenantChange }: { tenants: TenantMembership[]; tenantId: string; onTenantChange: (id: string) => void }) {
+  const { getAccessToken, signOut, user } = useAuth()
+  const selectedTenant = tenants.find(tenant => tenant.id === tenantId)!
+  const api = useMemo(() => createApiClient({ getAccessToken, tenantId }), [getAccessToken, tenantId])
   const [view, setView] = useState<View>('Dashboard')
   const [toast, setToast] = useState<Toast>(null)
-  const [detail, setDetail] = useState<string | null>(null)
-  const [importStep, setImportStep] = useState(0)
-  const [processing, setProcessing] = useState(false)
-  const [processed, setProcessed] = useState(false)
-  const [filter, setFilter] = useState('')
-  const [frozen, setFrozen] = useState(false)
   const [ruleOpen, setRuleOpen] = useState(false)
-  const [showWalkthrough, setShowWalkthrough] = useState(false)
-  const [persona, setPersona] = useState<Persona>('HR Manager')
+  const persona: Persona = selectedTenant.role === 'EMPLOYEE'
+    ? 'Employee'
+    : selectedTenant.role === 'MANAGER'
+      ? 'Reporting Manager'
+      : selectedTenant.role === 'HR_ADMIN'
+        ? 'HR Manager'
+        : selectedTenant.role === 'PAYROLL_ADMIN'
+          ? 'VP of HR'
+          : 'CHRO'
   const [apiHealth, setApiHealth] = useState<ApiHealth['status'] | 'connecting'>('connecting')
+  const [periods, setPeriods] = useState<ProcessingPeriod[]>([])
+  const [selectedPeriodId, setSelectedPeriodId] = useState('')
+  const [periodError, setPeriodError] = useState('')
+  const [periodLoading, setPeriodLoading] = useState(true)
+  const loadPeriods = useCallback(async () => {
+    setPeriodLoading(true)
+    setPeriodError('')
+    try {
+      const result = await api.getAttendancePeriods()
+      setPeriods(result.items)
+      setSelectedPeriodId(current => result.items.some(period => period.id === current) ? current : (result.items[0]?.id ?? ''))
+    } catch (caught) {
+      setPeriodError(caught instanceof Error ? caught.message : 'Unable to load processing periods.')
+    } finally {
+      setPeriodLoading(false)
+    }
+  }, [api])
+  useEffect(() => { void loadPeriods() }, [loadPeriods])
+  const selectedPeriod = periods.find(period => period.id === selectedPeriodId)
   useEffect(() => {
     const controller = new AbortController()
     getApiHealth(controller.signal)
@@ -65,57 +147,54 @@ function App() {
       .catch(() => setApiHealth('unavailable'))
     return () => controller.abort()
   }, [])
-  const allowedViews: Record<Persona, View[]> = {
-    'Employee': ['Dashboard', 'My Attendance', 'Leave & OD', 'Comp-Off'],
-    'Reporting Manager': ['Dashboard', 'Team Approvals', 'My Attendance', 'AI Insights'],
-    'HR Operations Lead': ['Dashboard', 'AI Insights', 'Exception Patterns', 'Processing Periods', 'Data Import Centre', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'Leave & OD', 'Comp-Off', 'Payroll Register', 'Reports', 'Audit Trail'],
-    'HR Manager': nav.map(item => item.label),
-    'VP of HR': ['Dashboard', 'AI Insights', 'Exception Patterns', 'Payroll Register', 'Rule Configuration', 'Reports', 'Audit Trail'],
-    'CHRO': ['Dashboard', 'AI Insights', 'Exception Patterns', 'Payroll Register', 'Reports', 'Audit Trail', 'User & Role Management'],
+  const allowedViews: Record<typeof selectedTenant.role, View[]> = {
+    EMPLOYEE: ['Dashboard', 'My Attendance', 'Leave & OD', 'Comp-Off'],
+    MANAGER: ['Dashboard', 'Team Approvals', 'My Attendance', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'AI Insights'],
+    HR_ADMIN: nav.map(item => item.label).filter(label => label !== 'User & Role Management'),
+    TENANT_ADMIN: nav.map(item => item.label),
+    PAYROLL_ADMIN: ['Dashboard', 'Processing Periods', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'Payroll Register', 'Reports', 'Audit Trail'],
+    AUDITOR: ['Dashboard', 'Processing Periods', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'Payroll Register', 'Reports', 'Audit Trail'],
   }
   const notify = (message: string, kind: 'success' | 'warning' = 'success') => {
     setToast({ message, kind }); window.setTimeout(() => setToast(null), 3200)
   }
-  const runProcessing = () => {
-    setProcessing(true)
-    window.setTimeout(() => { setProcessing(false); setProcessed(true); notify('Attendance processing completed for August 2026') }, 2300)
-  }
   const content = useMemo(() => {
-    if (view === 'Dashboard') return <Dashboard setView={setView} runProcessing={runProcessing} processed={processed} walkthrough={() => setShowWalkthrough(true)} persona={persona} />
+    if (periodLoading && ['Dashboard', 'Processing Periods', 'Data Import Centre', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'Payroll Register'].includes(view)) return <div className="empty-panel panel"><LoaderCircle className="spinner" size={25}/><h2>Loading processing periods</h2></div>
+    if (periodError && ['Dashboard', 'Processing Periods', 'Data Import Centre', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'Payroll Register'].includes(view)) return <div className="empty-panel panel"><AlertTriangle size={25}/><h2>Processing periods could not be loaded</h2><p className="form-error">{periodError}</p><button className="primary" onClick={() => void loadPeriods()}>Retry</button></div>
+    if (view === 'Processing Periods') return <ProcessingPeriodsView api={api} periods={periods} selectedPeriodId={selectedPeriodId} onSelect={setSelectedPeriodId} onRefresh={loadPeriods} role={selectedTenant.role} notify={notify} />
+    if (!selectedPeriod && ['Dashboard', 'Data Import Centre', 'Attendance Register', 'Exception Workbench', 'Approval Inbox', 'Payroll Register'].includes(view)) return <div className="empty-panel panel"><CalendarDays size={25}/><h2>No processing period exists</h2><p>Create the first tenant processing period through the validated attendance period API.</p><button className="primary" onClick={() => setView('Processing Periods')}>Open processing periods</button></div>
+    if (view === 'Dashboard') return <LiveDashboard api={api} period={selectedPeriod!} setView={setView} />
     if (view === 'AI Insights') return <AIInsights persona={persona} setView={setView} />
     if (view === 'Exception Patterns') return <ExceptionPatterns persona={persona} setView={setView} />
     if (view === 'My Attendance') return <EmployeePortal notify={notify} />
     if (view === 'Team Approvals') return <ManagerApprovals notify={notify} />
-    if (view === 'Processing Periods') return <Periods frozen={frozen} setFrozen={setFrozen} runProcessing={runProcessing} notify={notify} />
-    if (view === 'Data Import Centre') return <ImportCentre step={importStep} setStep={setImportStep} runProcessing={runProcessing} notify={notify} />
-    if (view === 'Attendance Register') return <AttendanceRegister filter={filter} setFilter={setFilter} open={setDetail} />
-    if (view === 'Exception Workbench') return <ExceptionWorkbench notify={notify} />
-    if (view === 'Approval Inbox') return <ApprovalInbox notify={notify} />
+    if (view === 'Data Import Centre') return <ImportCentreView api={api} period={selectedPeriod!} role={selectedTenant.role} notify={notify} />
+    if (view === 'Employees') return <EmployeesView getAccessToken={getAccessToken} tenantId={tenantId} />
+    if (view === 'Attendance Register') return <AttendanceRegisterView api={api} period={selectedPeriod!} />
+    if (view === 'Exception Workbench') return <ExceptionWorkbenchView api={api} period={selectedPeriod!} role={selectedTenant.role} notify={notify} />
+    if (view === 'Approval Inbox') return <ApprovalInboxView api={api} period={selectedPeriod!} notify={notify} />
     if (view === 'Leave & OD') return <LeaveOD />
     if (view === 'Comp-Off') return <CompOff />
-    if (view === 'Payroll Register') return <Payroll frozen={frozen} setFrozen={setFrozen} notify={notify} />
+    if (view === 'Payroll Register') return <PayrollRegisterView api={api} period={selectedPeriod!} role={selectedTenant.role} notify={notify} />
     if (view === 'Rule Configuration') return <Rules open={() => setRuleOpen(true)} />
-    if (view === 'User & Role Management') return <UserRoleManagement notify={notify} />
+    if (view === 'User & Role Management') return <UserManagementView getAccessToken={getAccessToken} tenantId={tenantId} />
     if (view === 'Integration Settings') return <Integrations notify={notify} />
     return <GenericPage title={view} />
-  }, [view, importStep, processing, processed, filter, frozen, persona])
+  }, [view, persona, getAccessToken, tenantId, api, periods, selectedPeriodId, selectedPeriod, selectedTenant.role, periodLoading, periodError, loadPeriods])
 
   return <div className="app">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">S&P</div><div><b>SP Foundation</b><small>Attendance Intelligence</small></div></div>
-      <div className="workspace"><span className="pulse"></span><span>August 2026</span><ChevronDown size={14} /></div>
-      <nav>{nav.filter(item => allowedViews[persona].includes(item.label)).map((item, i) => <div key={item.label}>{item.group && <p className="nav-group">{item.group}</p>}<button className={view === item.label ? 'nav-item active' : 'nav-item'} onClick={() => setView(item.label)}><span className="nav-dot">{i + 1}</span>{item.label}{item.label === 'Exception Workbench' && <em>17</em>}</button></div>)}</nav>
-      <div className="persona-picker"><Sparkles size={14}/><select aria-label="Active persona" value={persona} onChange={event => { setPersona(event.target.value as Persona); setView('Dashboard') }}>{(['Employee', 'Reporting Manager', 'HR Operations Lead', 'HR Manager', 'VP of HR', 'CHRO'] as Persona[]).map(role => <option key={role}>{role}</option>)}</select></div>
-      <div className="sidebar-bottom"><button className="help"><CircleHelp size={17} /> Help & support</button><div className="user-avatar">{persona === 'Employee' ? 'AK' : persona === 'Reporting Manager' ? 'AP' : persona === 'CHRO' ? 'AS' : persona === 'VP of HR' ? 'RM' : persona === 'HR Operations Lead' ? 'KM' : 'PR'}</div><div className="user-copy"><b>{persona === 'Employee' ? 'Arjun Kumar' : persona === 'Reporting Manager' ? 'Aditi Patel' : persona === 'CHRO' ? 'Anika Sharma' : persona === 'VP of HR' ? 'Rohan Mehta' : persona === 'HR Operations Lead' ? 'Karthik Menon' : 'Priya Raman'}</b><small>{persona}</small></div><MoreHorizontal size={16} /></div>
+      <div className="workspace tenant-workspace"><span className="pulse"></span><select aria-label="Active tenant" value={tenantId} onChange={event => { onTenantChange(event.target.value); setView('Dashboard') }}>{tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select><ChevronDown size={14} /></div>
+      <nav>{nav.filter(item => allowedViews[selectedTenant.role].includes(item.label)).map((item, i) => <div key={item.label}>{item.group && <p className="nav-group">{item.group}</p>}<button className={view === item.label ? 'nav-item active' : 'nav-item'} onClick={() => setView(item.label)}><span className="nav-dot">{i + 1}</span>{item.label}</button></div>)}</nav>
+      <div className="persona-picker"><ShieldCheck size={14}/><span>{selectedTenant.role.replaceAll('_', ' ')}</span></div>
+      <div className="sidebar-bottom"><button className="help"><CircleHelp size={17} /> Help & support</button><div className="user-avatar">{(user?.email ?? user?.subject ?? 'HR').slice(0, 2).toUpperCase()}</div><div className="user-copy"><b>{user?.email ?? user?.subject}</b><small>{selectedTenant.role.replaceAll('_', ' ')}</small></div><button className="signout-button" onClick={signOut} title="Sign out"><MoreHorizontal size={16} /></button></div>
     </aside>
     <main>
-      <header><div><div className="crumb">Attendance, Absence & Payroll Automation <span>/</span> {view}</div><h1>{view}</h1></div><div className="header-actions"><span className={`api-status ${apiHealth}`}><i></i>{apiHealth === 'ok' ? 'API connected' : apiHealth === 'connecting' ? 'Connecting API' : 'Prototype mode'}</span><button className="icon-button"><Bell size={18} /><i></i></button><button className="period-button"><CalendarDays size={16} /> 01–31 Aug 2026 <ChevronDown size={14} /></button></div></header>
+      <header><div><div className="crumb">Attendance, Absence & Payroll Automation <span>/</span> {view}</div><h1>{view}</h1></div><div className="header-actions"><span className={`api-status ${apiHealth}`}><i></i>{apiHealth === 'ok' ? 'API connected' : apiHealth === 'connecting' ? 'Connecting API' : 'API unavailable'}</span><button className="icon-button"><Bell size={18} /><i></i></button><label className="period-button"><CalendarDays size={16} /><select aria-label="Processing period" value={selectedPeriodId} onChange={event => setSelectedPeriodId(event.target.value)} disabled={!periods.length}>{periods.length ? periods.map(period => <option key={period.id} value={period.id}>{period.name}</option>) : <option>No period</option>}</select><ChevronDown size={14} /></label></div></header>
       <section className="content">{content}</section>
     </main>
-    {processing && <ProcessingOverlay />}
-    {detail && <EmployeeDetail name={detail} close={() => setDetail(null)} />}
     {ruleOpen && <RuleDrawer close={() => setRuleOpen(false)} notify={notify} />}
-    {showWalkthrough && <Walkthrough close={() => setShowWalkthrough(false)} />}
     {toast && <div className={`toast ${toast.kind}`}><CheckCircle2 size={18} />{toast.message}</div>}
   </div>
 }
@@ -229,21 +308,6 @@ function ManagerApprovals({ notify }: { notify: (message: string, kind?: 'succes
     <section className="manager-notice"><ShieldCheck size={19}/><div><b>Waiver control enabled</b><p>For a biometric punch plus approved leave conflict, select approve when the employee worked. Select waiver when the leave should stand; a reason is required and HR receives the audit record.</p></div></section>
     <section className="panel table-panel"><table><thead><tr><th>Request</th><th>Employee</th><th>Exception / request</th><th>Date</th><th>Evidence</th><th>Risk</th><th>Decision</th></tr></thead><tbody>{items.map(item => <tr key={item[0]}><td><b>{item[0]}</b><small className="subline">Submitted today</small></td><td>{item[1]}</td><td><b>{item[2]}</b></td><td>{item[3]}</td><td>{item[4]}</td><td><Badge tone={item[5] === 'High' ? 'red' : item[5] === 'Medium' ? 'amber' : 'green'}>{item[5]}</Badge></td><td><div className="decision-buttons"><button className="approve" onClick={() => decide(item[0], 'Approved')}>Approve</button>{item[2].includes('conflict') && <button className="secondary small" onClick={() => decide(item[0], 'Waived')}>Waive leave</button>}<button className="secondary small" onClick={() => notify(`Clarification requested from ${item[1]}`, 'warning')}>Clarify</button></div></td></tr>)}</tbody></table></section></>
 }
-function UserRoleManagement({ notify }: { notify: (message: string, kind?: 'success' | 'warning') => void }) {
-  const [users, setUsers] = useState([
-    ['Priya Raman', 'priya.raman@spf.in', 'HR Manager', 'HR Operations', 'Active'],
-    ['Karthik Menon', 'karthik.menon@spf.in', 'HR Operations Lead', 'HR Operations', 'Active'],
-    ['Rohan Mehta', 'rohan.mehta@spf.in', 'VP of HR', 'Leadership', 'Active'],
-    ['Anika Sharma', 'anika.sharma@spf.in', 'CHRO', 'Leadership', 'Active'],
-    ['Aditi Patel', 'aditi.patel@spf.in', 'Reporting Manager', 'Projects', 'Active'],
-    ['Anand Shah', 'anand.shah@spf.in', 'Reporting Manager', 'Sales', 'Suspended'],
-  ])
-  const toggleStatus = (email: string) => { setUsers(items => items.map(user => user[1] === email ? [...user.slice(0, 4), user[4] === 'Active' ? 'Suspended' : 'Active'] : user)); notify(`Access status updated for ${email}`) }
-  return <><div className="page-top"><p>Manage access, persona-based dashboards, approval authority, and attendance data permissions.</p><button className="primary" onClick={() => notify('Invitation created for a new user')}><Plus size={16}/> Invite user</button></div>
-    <div className="access-summary"><div><Users size={20}/><b>28</b><span>Active users</span></div><div><ShieldCheck size={20}/><b>6</b><span>Defined roles</span></div><div><Clock3 size={20}/><b>3</b><span>Pending invitations</span></div><div><AlertTriangle size={20}/><b>1</b><span>Access review due</span></div></div>
-    <div className="role-grid"><section className="panel"><div className="panel-head"><div><h2>Role permissions</h2><p>What each persona can access</p></div><button className="text-button">Manage roles</button></div>{[['HR Operations Lead', 'Exceptions, processing, imports', 'Resolve and assign operational work'], ['HR Manager', 'Approvals, attendance, payroll register', 'Approve corrections and prepare payroll'], ['VP of HR', 'Insights, reports, policy review', 'Monitor department risks and policy impact'], ['CHRO', 'Executive insights, governance, audit', 'Oversee closure confidence and controls']].map(role => <div className="role-row" key={role[0]}><span className="role-mark">{role[0].split(' ').map(word => word[0]).join('').slice(0, 2)}</span><div><b>{role[0]}</b><small>{role[1]}</small></div><p>{role[2]}</p></div>)}</section><section className="panel access-governance"><h2>Access governance</h2><p>Quarterly access review is due for one suspended manager account.</p><div className="governance-meter"><i></i><b>96%</b><span>review completion</span></div><button className="secondary small" onClick={() => notify('Access review package generated')}>Start access review</button></section></div>
-    <section className="panel table-panel user-table"><div className="panel-head"><div><h2>Users</h2><p>Role assignments and access status</p></div><div><button className="secondary small"><Filter size={14}/> Filter</button><button className="secondary small"><Download size={14}/> Export</button></div></div><table><thead><tr><th>User</th><th>Role</th><th>Scope</th><th>Last active</th><th>Status</th><th></th></tr></thead><tbody>{users.map(user => <tr key={user[1]}><td><b>{user[0]}</b><small className="subline">{user[1]}</small></td><td><Badge tone={user[2].includes('CHRO') || user[2].includes('VP') ? 'purple' : user[2].includes('Manager') ? 'blue' : 'green'}>{user[2]}</Badge></td><td>{user[3]}</td><td>Today, 10:24 AM</td><td><Badge tone={user[4] === 'Active' ? 'green' : 'amber'}>{user[4]}</Badge></td><td><button className="secondary small" onClick={() => toggleStatus(user[1])}>{user[4] === 'Active' ? 'Suspend' : 'Restore'}</button></td></tr>)}</tbody></table></section></>
-}
 function GenericPage({ title }: { title: string }) { return <div className="empty-panel panel"><div className="empty-icon"><Sparkles size={24}/></div><h2>{title}</h2><p>This presentation-ready operational view is available through the left navigation. Use the dashboard to continue the end-to-end attendance journey.</p></div> }
 function GenericData({ title, cols, rows }: { title: string; cols: string[]; rows: string[][] }) { return <section className="panel table-panel generic-data"><div className="panel-head"><div><h2>{title}</h2><p>August 2026 processing period</p></div><button className="secondary small"><Download size={14}/> Export</button></div><table><thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r,i) => <tr key={i}>{r.map((v,j) => <td key={j}>{j === 0 ? <b>{v}</b> : v.includes('Approved') || v === 'Payroll ready' ? <Badge tone="green">{v}</Badge> : v.includes('Pending') || v.includes('Review') || v === 'Blocked' ? <Badge tone="amber">{v}</Badge> : v === 'Expired' || v === 'Expiring soon' ? <Badge tone="red">{v}</Badge> : v}</td>)}</tr>)}</tbody></table></section> }
 
@@ -251,5 +315,7 @@ function ProcessingOverlay() { const [stage, setStage] = useState(0); const stag
 function EmployeeDetail({ name, close }: { name: string; close: () => void }) { return <div className="detail-panel"><div className="detail-head"><div><small>EMPLOYEE-DAY ATTENDANCE</small><h2>{name}</h2><p>12 August 2026 · Sales · Customer locations</p></div><button className="icon-button" onClick={close}><X size={18}/></button></div><div className="detail-status"><Badge tone="green">Present</Badge><span>Payroll impact: <b>No deduction</b></span></div><div className="timeline-detail"><h3>Attendance timeline</h3><p><i></i><b>10:12 AM</b><span>Mobile login · Approved customer location</span></p><p><i></i><b>10:30 AM</b><span>Approved OD begins · Customer visit</span></p><p><i></i><b>07:48 PM</b><span>Mobile logout · GPS verified</span></p><p><i className="final"></i><b>9h 36m</b><span>Final worked duration</span></p></div><div className="why"><div><Sparkles size={17}/><b>Why this status?</b></div><p>Employee arrived 42 minutes after standard office start time. An approved customer-visit OD existed, GPS was within the approved location radius, and the employee completed 9 hours 36 minutes. The day is classified as Present with no payroll deduction.</p></div><div className="detail-grid"><div><span>Assigned policy</span><b>Sales Flexible Schedule</b></div><div><span>Attendance source</span><b>Mobile login</b></div><div><span>OD request</span><b>Approved</b></div><div><span>Rule version</span><b>v3.2</b></div></div><button className="primary full" onClick={close}>Close explanation</button></div> }
 function RuleDrawer({ close, notify }: any) { return <div className="detail-panel rule-drawer"><div className="detail-head"><div><small>EDIT RULE</small><h2>Late & permission allowance</h2><p>Applicable to all employees</p></div><button className="icon-button" onClick={close}><X size={18}/></button></div><label>Rule condition<select defaultValue="Combined late coming and permission"><option>Combined late coming and permission</option></select></label><label>Monthly allowance<input defaultValue="4 hours"/></label><label>Outcome after threshold<input defaultValue="Every additional 4h = 0.5 day LOP"/></label><label>Effective date<input type="date" defaultValue="2026-08-01"/></label><div className="rule-note compact"><ShieldCheck size={17}/><p>This allowance resets at the beginning of every payroll month. This assumption is configurable.</p></div><button className="primary full" onClick={() => { close(); notify('Rule version 3.3 saved for approval') }}>Save new rule version</button></div> }
 function Walkthrough({ close }: { close: () => void }) { const [i, setI] = useState(0); const slides = [['Attendance intelligence layer','ESSL and greytHR remain your source systems. This application consolidates, validates, and applies your policies before payroll.'],['Import and validate','Files and integrations are checked for structure, duplicates, inactive employees, missing shifts, and source quality before calculation.'],['Explainable decisions','Every attendance result is traceable to source records, applied policy, approval history, and a plain-language explanation.'],['Payroll-ready output','Only exceptions require attention. Once critical exceptions are resolved, attendance is frozen and sent to payroll with a complete audit trail.']]; return <div className="overlay"><section className="walkthrough"><button className="close-walk" onClick={close}><X size={18}/></button><span className="walk-count">DEMO WALKTHROUGH · {i + 1} / {slides.length}</span><div className="walk-icon"><Sparkles size={30}/></div><h2>{slides[i][0]}</h2><p>{slides[i][1]}</p><div className="walk-dots">{slides.map((_, j) => <i className={i === j ? 'selected' : ''} key={j}/>)}</div><button className="primary" onClick={() => i === slides.length - 1 ? close() : setI(i + 1)}>{i === slides.length - 1 ? 'Finish walkthrough' : 'Continue'} <ArrowRight size={16}/></button></section></div> }
+
+void [Dashboard, Periods, ImportCentre, AttendanceRegister, ExceptionWorkbench, ApprovalInbox, Payroll, ProcessingOverlay, EmployeeDetail, Walkthrough]
 
 export default App
