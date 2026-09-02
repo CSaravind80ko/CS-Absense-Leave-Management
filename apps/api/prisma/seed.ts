@@ -214,6 +214,94 @@ async function seedAttendanceDemo(tenantId: string): Promise<void> {
   console.info(`Seeded deterministic attendance workflow for ${period.name}`);
 }
 
+const DEMO_POLICY_VERSION_ID = 'b6a6f0b0-6f7a-4b8a-9e7c-9b1e6d2b7a01';
+const DEMO_EMPLOYEE_GROUP_HOLIDAY_ID = '7e3f9b3e-3a0e-4a5c-9c7d-5c3e2f8b9a02';
+
+async function seedPolicyEngineDemo(tenantId: string): Promise<void> {
+  if (process.env.SEED_POLICY_ENGINE_DEMO !== 'true') return;
+
+  const group = await prisma.employeeGroup.upsert({
+    where: { tenantId_code: { tenantId, code: 'DEMO-FLEX' } },
+    update: { name: 'Demo Flexible Group', priority: 10 },
+    create: {
+      tenantId,
+      code: 'DEMO-FLEX',
+      name: 'Demo Flexible Group',
+      priority: 10,
+    },
+  });
+
+  const members = await prisma.employee.findMany({
+    where: { tenantId },
+    orderBy: { employeeNumber: 'asc' },
+    take: 2,
+  });
+  for (const employee of members) {
+    await prisma.employeeGroupMember.upsert({
+      where: {
+        groupId_employeeId: { groupId: group.id, employeeId: employee.id },
+      },
+      update: {},
+      create: { tenantId, groupId: group.id, employeeId: employee.id },
+    });
+  }
+
+  await prisma.policyVersion.upsert({
+    where: { id: DEMO_POLICY_VERSION_ID },
+    update: {
+      tenantId,
+      scopeType: 'EMPLOYEE_GROUP',
+      scopeId: group.id,
+      status: 'PUBLISHED',
+      name: 'Demo Flexible Policy',
+      effectiveFrom: new Date('2026-08-01'),
+      workingWeekdays: [1, 2, 3, 4, 5],
+      rules: {
+        lateArrival: { graceMinutes: 30 },
+        earlyDeparture: { graceMinutes: 30 },
+        overtime: { thresholdMinutes: 15, dailyCapMinutes: 240, roundingMinutes: 15 },
+        halfDay: { halfDayThresholdMinutes: 240 },
+        absence: { lop: true },
+      },
+      publishedAt: new Date(),
+      publishedBy: 'system:seed',
+    },
+    create: {
+      id: DEMO_POLICY_VERSION_ID,
+      tenantId,
+      scopeType: 'EMPLOYEE_GROUP',
+      scopeId: group.id,
+      status: 'PUBLISHED',
+      name: 'Demo Flexible Policy',
+      effectiveFrom: new Date('2026-08-01'),
+      workingWeekdays: [1, 2, 3, 4, 5],
+      rules: {
+        lateArrival: { graceMinutes: 30 },
+        earlyDeparture: { graceMinutes: 30 },
+        overtime: { thresholdMinutes: 15, dailyCapMinutes: 240, roundingMinutes: 15 },
+        halfDay: { halfDayThresholdMinutes: 240 },
+        absence: { lop: true },
+      },
+      publishedAt: new Date(),
+      publishedBy: 'system:seed',
+      createdBy: 'system:seed',
+    },
+  });
+
+  await prisma.holiday.upsert({
+    where: { id: DEMO_EMPLOYEE_GROUP_HOLIDAY_ID },
+    update: { tenantId, date: new Date('2026-08-15'), name: 'Independence Day' },
+    create: {
+      id: DEMO_EMPLOYEE_GROUP_HOLIDAY_ID,
+      tenantId,
+      date: new Date('2026-08-15'),
+      name: 'Independence Day',
+    },
+  });
+
+  console.info(`Seeded policy engine demo (group ${group.name})`);
+}
+
 async function main(): Promise<void> {
   const tenantName = required('SEED_TENANT_NAME');
   const tenantSlug = required('SEED_TENANT_SLUG');
@@ -304,6 +392,7 @@ async function main(): Promise<void> {
   });
 
   await seedAttendanceDemo(tenant.id);
+  await seedPolicyEngineDemo(tenant.id);
   console.info(`Seeded HR administrator membership for tenant ${tenant.slug}`);
 }
 
