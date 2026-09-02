@@ -1,6 +1,42 @@
 # Attendance Intelligence Platform
 
-Multi-tenant attendance and payroll preparation SaaS for importing source data, applying attendance policy, resolving exceptions, approving decisions, and producing auditable payroll exports.
+This repository contains the complete multi-tenant attendance and payroll
+preparation platform. It covers the employee and operations web experiences,
+tenant-safe APIs, enterprise identity and user provisioning, attendance
+ingestion and calculation, exception and approval workflows, payroll export
+preparation, and AWS delivery infrastructure.
+
+`main` is the canonical integration branch for the whole platform.
+
+## Platform scope
+
+| Capability | What is included |
+| --- | --- |
+| Employee and operations experience | Role-aware React screens for attendance, regularization, approvals, employee administration, imports, policies, and payroll readiness |
+| Attendance operations | Processing periods, attendance register and day detail, punch evidence, exception decisions, approval history, dashboards, and audited payroll export requests |
+| Policy calculation | Effective-dated policies, scope precedence, employee groups, holidays, late/early/overtime/LOP evaluation, calculation traces, and selective recomputation |
+| Data ingestion | Versioned SQS contracts, private S3 source files, idempotent import processing, quarantine handling, transactional outbox delivery, and dead-letter recovery |
+| Enterprise identity | Cognito OIDC/PKCE, shared and dedicated connections, tenant discovery, SAML onboarding, tenant user administration, role enforcement, and MFA-aware account operations |
+| User provisioning | Tenant-scoped SCIM 2.0 users and groups with bearer-token rotation, replay-safe writes, deprovisioning, and immutable external identity mapping |
+| Cloud delivery | AWS CDK stacks for Cognito, ECS Fargate, RDS PostgreSQL, SQS, S3, CloudFront, observability, deployment checks, rollback, and environment teardown |
+
+The platform preserves tenant ownership throughout the data model and uses
+append-only decisions and audit events where business history must remain
+traceable. Import rows remain separate from calculated attendance results, and
+payroll exports reference the exact period and result set used to produce them.
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/` | React web application |
+| `apps/api/` | NestJS business and identity APIs plus the Prisma schema and migrations |
+| `apps/worker/` | Attendance import, calculation, recomputation, outbox, and payroll workers |
+| `apps/contracts/` | Shared versioned event contracts used by the API and workers |
+| `infra/` | AWS CDK application and reusable infrastructure constructs |
+| `scripts/` | Local/deployed E2E, infrastructure verification, deployment, and teardown automation |
+| `docs/` | Detailed identity, SAML/SCIM, live attendance, ingestion, policy engine, and deployment guides |
+| `fixtures/` | Deterministic local and E2E source data |
 
 ## Architecture
 
@@ -170,11 +206,17 @@ Attendance calculation is driven by immutable, effective-dated `PolicyVersion` r
 | --- | --- |
 | `npm run dev:web` | Start the React application |
 | `npm run dev:api` | Start the NestJS API |
+| `npm run dev:worker` | Start the attendance worker |
 | `npm run build` | Build all workspaces |
 | `npm run lint` | Lint web and API code |
+| `npm test` | Run API and worker tests |
 | `npm run db:generate` | Generate the Prisma client |
 | `npm run db:migrate` | Apply local database migrations |
 | `npm run db:seed` | Seed the initial tenant and HR administrator |
+| `npm run e2e:local` | Run the local end-to-end workflow |
+| `npm run e2e:dev` | Run end-to-end checks against the development environment |
+| `npm run deploy:dev` | Build, migrate, deploy, and verify the development environment |
+| `npm run infra:verify` | Synthesize and verify infrastructure templates |
 | `npm run infra:diff` | Preview AWS changes |
 | `npm run infra:deploy -- -- -c stage=dev` | Deploy the development stack |
 
