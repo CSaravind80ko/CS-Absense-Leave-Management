@@ -77,6 +77,11 @@ export class PoliciesController {
     return this.policies.deleteDraft(tenantId, id, subject);
   }
 
+  @Get(':id/preview')
+  preview(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.policies.preview(tenantId, id);
+  }
+
   @Post(':id/publish')
   @Roles(ApplicationRole.TENANT_ADMIN, ApplicationRole.HR_ADMIN)
   publish(
