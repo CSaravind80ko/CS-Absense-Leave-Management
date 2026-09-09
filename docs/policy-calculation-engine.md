@@ -96,4 +96,13 @@ Set `SEED_POLICY_ENGINE_DEMO=true` for local evaluation only — it seeds a demo
 
 ## Scope of this layer
 
-This is the calculation engine only. The no-code policy editor UI, publish preview/impact comparison, and the attendance-day explanation drawer (reading `calculationTrace`) are follow-up work against the API surface documented here.
+This is the calculation engine only. Everything else in this section (calendars/overnight shifts, GPS/flexible-shift requirements, worker metrics and alarms, leave/OD/comp-off) remains later roadmap work, not attempted here.
+
+## Follow-up: policy editor UI, publish preview, and the explanation drawer
+
+Three items were deliberately deferred when this layer first shipped and are now implemented against the API surface documented above, without changing that surface's behavior:
+
+- **`GET /api/v1/policies/:id/preview`** (`policies.controller.ts`/`policies.service.ts`) — a `DRAFT`-only, read-only impact check: a field-by-field diff of `rules`/`workingWeekdays` against the scope's current `PUBLISHED` version, plus a count of employees and `AttendanceDay` rows in `[effectiveFrom, today]` that the real publish's recompute job would touch (using the same scope-to-employee-filter logic as `publish()` and the worker's recompute handler). It does not re-run `recomputeDay`'s calculation — that stays worker-only — so it reports what will be recomputed, not a before/after simulation of the results.
+- **`GET /api/v1/departments` and `GET /api/v1/locations`** (new `apps/api/src/org/` module) — tenant-scoped name lookups that exist solely so the policy scope picker can show real names instead of raw UUIDs.
+- **`src/policies/PolicyConfigurationView.tsx`** — replaces the previously hardcoded "Rule Configuration" screen with a real no-code editor: create/edit `DRAFT` policy versions per scope (with the preview above shown before publish), an employee-groups tab for group/member management, and version history via the existing `GET /api/v1/policies?scopeType&scopeId` filter.
+- **Attendance explanation drawer** — the existing attendance-day detail panel in `src/attendance/LiveAttendanceViews.tsx` (`AttendanceRegisterView`) now renders `calculationTrace.ruleEvaluations` and the day's exceptions, so HR can see exactly which rule produced a given result, using data the worker was already writing.
