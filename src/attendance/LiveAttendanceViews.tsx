@@ -239,6 +239,40 @@ export function ImportCentreView({ api, period, role, notify }: { api: ApiClient
   </>
 }
 
+const RULE_LABELS: Record<string, string> = {
+  LATE_ARRIVAL: 'Late arrival',
+  EARLY_DEPARTURE: 'Early departure',
+  OVERTIME: 'Overtime',
+  ABSENCE: 'Absence / LOP',
+  MISSING_PUNCH: 'Missing punch',
+}
+
+function ExplanationDrawer({ detail }: { detail: AttendanceDayDetail }) {
+  const trace = detail.calculationTrace
+  if (!trace) return <div className="timeline-detail"><h3>Why this result</h3><p>No policy calculation trace is recorded for this day yet.</p></div>
+  return <div className="timeline-detail explanation-drawer">
+    <h3>Why this result</h3>
+    <p>
+      {trace.dayType === 'WORKING' ? 'Working day' : label(trace.dayType)}
+      {trace.holiday ? ` · Holiday: ${trace.holiday.name}` : ''}
+      {' '}under the policy effective {formatDate(trace.effectiveFrom)} ({label(trace.scopeType)} scope).
+    </p>
+    <div className="rule-trace-list">
+      {trace.ruleEvaluations.map(evaluation => {
+        const { rule, triggered, ...rest } = evaluation
+        const detailText = Object.entries(rest)
+          .map(([key, value]) => `${label(key)}: ${value}`)
+          .join(' · ')
+        return <div className={triggered ? 'rule-trace-row triggered' : 'rule-trace-row'} key={rule}>
+          {triggered ? <AlertTriangle size={15}/> : <CheckCircle2 size={15}/>}
+          <div><b>{RULE_LABELS[rule] ?? label(rule)}</b><small>{triggered ? 'Triggered' : 'Not triggered'}{detailText ? ` · ${detailText}` : ''}</small></div>
+        </div>
+      })}
+    </div>
+    {detail.exceptions.length > 0 && <div className="rule-trace-exceptions"><h4>Resulting exceptions</h4>{detail.exceptions.map(exception => <p key={exception.id}><Badge tone={exception.severity === 'CRITICAL' || exception.severity === 'HIGH' ? 'red' : 'amber'}>{label(exception.severity)}</Badge> {label(exception.type)} · {label(exception.payrollImpact)}</p>)}</div>}
+  </div>
+}
+
 export function AttendanceRegisterView({ api, period }: { api: ApiClient; period: ProcessingPeriod }) {
   const [data, setData] = useState<Page<AttendanceRegisterItem>>()
   const [detail, setDetail] = useState<AttendanceDayDetail>()
@@ -257,7 +291,7 @@ export function AttendanceRegisterView({ api, period }: { api: ApiClient; period
   return <>
     <div className="page-top"><p>Tenant-scoped daily attendance and source evidence for {period.name}.</p><div className="search"><Search size={16}/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search employee"/></div></div>
     {(loading || error || !data?.items.length) ? state : <section className="panel table-panel"><table><thead><tr><th>Employee</th><th>Date</th><th>First punch</th><th>Last punch</th><th>Worked</th><th>Status</th><th>Readiness</th></tr></thead><tbody>{data.items.map(day => <tr key={day.id} onClick={() => void open(day.id)}><td><b>{day.employee.employeeNumber}</b><small className="subline">{day.employee.firstName} {day.employee.lastName}</small></td><td>{formatDate(day.workDate)}</td><td>{formatTime(day.firstPunchAt)}</td><td>{formatTime(day.lastPunchAt)}</td><td>{formatMinutes(day.workedMinutes)}</td><td><Badge tone={day.status === 'PRESENT' ? 'green' : 'amber'}>{label(day.status)}</Badge></td><td><Badge tone={day.exceptions.length ? 'red' : 'green'}>{day.exceptions.length ? 'Blocked' : 'Ready'}</Badge></td></tr>)}</tbody></table></section>}
-    {detail && <div className="detail-panel"><div className="detail-head"><div><small>EMPLOYEE-DAY ATTENDANCE</small><h2>{detail.employee.firstName} {detail.employee.lastName}</h2><p>{formatDate(detail.workDate)} · {detail.employee.employeeNumber}</p></div><button className="icon-button" onClick={() => setDetail(undefined)}><X size={18}/></button></div><div className="detail-status"><Badge tone={detail.exceptions.length ? 'red' : 'green'}>{label(detail.status)}</Badge><span>Version <b>{detail.version}</b></span></div><div className="timeline-detail"><h3>Persisted punch timeline</h3>{detail.punches.length === 0 ? <p>No source punches are linked to this date.</p> : detail.punches.map(punch => <p key={punch.id}><i></i><b>{formatTime(punch.occurredAt)}</b><span>{label(punch.type)} · {punch.source}{punch.location ? ` · ${punch.location.name}` : ''}</span></p>)}</div><button className="primary full" onClick={() => setDetail(undefined)}>Close detail</button></div>}
+    {detail && <div className="detail-panel"><div className="detail-head"><div><small>EMPLOYEE-DAY ATTENDANCE</small><h2>{detail.employee.firstName} {detail.employee.lastName}</h2><p>{formatDate(detail.workDate)} · {detail.employee.employeeNumber}</p></div><button className="icon-button" onClick={() => setDetail(undefined)}><X size={18}/></button></div><div className="detail-status"><Badge tone={detail.exceptions.length ? 'red' : 'green'}>{label(detail.status)}</Badge><span>Version <b>{detail.version}</b></span></div><div className="timeline-detail"><h3>Persisted punch timeline</h3>{detail.punches.length === 0 ? <p>No source punches are linked to this date.</p> : detail.punches.map(punch => <p key={punch.id}><i></i><b>{formatTime(punch.occurredAt)}</b><span>{label(punch.type)} · {punch.source}{punch.location ? ` · ${punch.location.name}` : ''}</span></p>)}</div><ExplanationDrawer detail={detail}/><button className="primary full" onClick={() => setDetail(undefined)}>Close detail</button></div>}
   </>
 }
 
