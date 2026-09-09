@@ -224,6 +224,95 @@ describe('PoliciesService.publish', () => {
   });
 });
 
+describe('PoliciesService.preview', () => {
+  function draftVersion(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: versionId,
+      tenantId,
+      status: 'DRAFT',
+      scopeType: 'DEPARTMENT',
+      scopeId: departmentId,
+      effectiveFrom: new Date('2026-08-01'),
+      workingWeekdays: [1, 2, 3, 4, 5],
+      rules,
+      ...overrides,
+    };
+  }
+
+  it('rejects previewing a non-draft version', async () => {
+    const prisma = {
+      policyVersion: { findFirst: jest.fn().mockResolvedValue(draftVersion({ status: 'PUBLISHED' })) },
+    } as unknown as PrismaService;
+    const service = new PoliciesService(prisma);
+
+    await expect(service.preview(tenantId, versionId)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('reports no rule diff and zero impact when there is no prior published version', async () => {
+    const findFirst = jest.fn().mockResolvedValueOnce(draftVersion()).mockResolvedValueOnce(null);
+    const employeeCount = jest.fn().mockResolvedValue(0);
+    const attendanceDayCount = jest.fn().mockResolvedValue(0);
+    const prisma = {
+      policyVersion: { findFirst },
+      employee: { count: employeeCount },
+      attendanceDay: { count: attendanceDayCount },
+    } as unknown as PrismaService;
+    const service = new PoliciesService(prisma);
+
+    const result = await service.preview(tenantId, versionId);
+
+    expect(result.affectedEmployeeCount).toBe(0);
+    expect(result.affectedAttendanceDayCount).toBe(0);
+    expect(employeeCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId, departmentId }) }),
+    );
+  });
+
+  it('diffs changed rule fields against the current published version for the same scope', async () => {
+    const published = draftVersion({
+      status: 'PUBLISHED',
+      rules: { ...rules, lateArrival: { graceMinutes: 5 } },
+    });
+    const findFirst = jest.fn().mockResolvedValueOnce(draftVersion()).mockResolvedValueOnce(published);
+    const prisma = {
+      policyVersion: { findFirst },
+      employee: { count: jest.fn().mockResolvedValue(3) },
+      attendanceDay: { count: jest.fn().mockResolvedValue(42) },
+    } as unknown as PrismaService;
+    const service = new PoliciesService(prisma);
+
+    const result = await service.preview(tenantId, versionId);
+
+    expect(result.ruleDiff).toContainEqual({
+      field: 'rules.lateArrival.graceMinutes',
+      from: 5,
+      to: 10,
+    });
+    expect(result.affectedEmployeeCount).toBe(3);
+    expect(result.affectedAttendanceDayCount).toBe(42);
+  });
+
+  it('scopes the employee count to exactly the target employee for EMPLOYEE-scoped drafts', async () => {
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(draftVersion({ scopeType: 'EMPLOYEE', scopeId: employeeId }))
+      .mockResolvedValueOnce(null);
+    const employeeCount = jest.fn().mockResolvedValue(1);
+    const prisma = {
+      policyVersion: { findFirst },
+      employee: { count: employeeCount },
+      attendanceDay: { count: jest.fn().mockResolvedValue(0) },
+    } as unknown as PrismaService;
+    const service = new PoliciesService(prisma);
+
+    await service.preview(tenantId, versionId);
+
+    expect(employeeCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId, id: employeeId }) }),
+    );
+  });
+});
+
 describe('PoliciesService.listEffective', () => {
   it('picks the version with the greatest effectiveFrom per (scopeType, scopeId)', async () => {
     const prisma = {

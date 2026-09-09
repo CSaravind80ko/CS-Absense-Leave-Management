@@ -274,6 +274,60 @@ export class PoliciesService {
     );
   }
 
+  /**
+   * Publish-time impact preview for a DRAFT: a field-by-field diff against the scope's
+   * current PUBLISHED version, plus a count of employees/AttendanceDay rows that the real
+   * publish's recompute job would touch. Deliberately does not re-run recomputeDay's
+   * calculation (that logic lives only in apps/worker) — this is a diff + count, not a
+   * full dry-run simulation.
+   */
+  async preview(tenantId: string, id: string): Promise<PolicyPreview> {
+    const draft = await this.prisma.policyVersion.findFirst({ where: { id, tenantId } });
+    if (!draft) throw new NotFoundException('Policy version not found');
+    if (draft.status !== 'DRAFT') {
+      throw new ConflictException('Only draft policy versions can be previewed');
+    }
+    const latestPublished = await this.prisma.policyVersion.findFirst({
+      where: {
+        tenantId,
+        scopeType: draft.scopeType,
+        scopeId: draft.scopeId,
+        status: 'PUBLISHED',
+      },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    const ruleDiff = diffPolicyFields(
+      latestPublished
+        ? { workingWeekdays: latestPublished.workingWeekdays, rules: latestPublished.rules }
+        : null,
+      { workingWeekdays: draft.workingWeekdays, rules: draft.rules },
+    );
+
+    const today = new Date(new Date().toISOString().slice(0, 10));
+    const employeeWhere: Prisma.EmployeeWhereInput = {
+      tenantId,
+      ...(draft.scopeType === 'EMPLOYEE'
+        ? { id: draft.scopeId }
+        : scopeToEmployeeFilter(draft.scopeType, draft.scopeId)),
+    };
+    const affectedEmployeeCount = await this.prisma.employee.count({ where: employeeWhere });
+    const affectedAttendanceDayCount = await this.prisma.attendanceDay.count({
+      where: {
+        tenantId,
+        workDate: { gte: draft.effectiveFrom, lte: today },
+        employee: employeeWhere,
+      },
+    });
+
+    return {
+      ruleDiff,
+      affectedEmployeeCount,
+      affectedAttendanceDayCount,
+      dateFrom: draft.effectiveFrom.toISOString().slice(0, 10),
+      dateTo: today.toISOString().slice(0, 10),
+    };
+  }
+
   async resolve(tenantId: string, dto: ResolvePolicyDto) {
     const workDate = new Date(dto.date);
     try {
@@ -340,4 +394,67 @@ export class PoliciesService {
         return false;
     }
   }
+}
+
+export interface PolicyPreview {
+  ruleDiff: Array<{ field: string; from: unknown; to: unknown }>;
+  affectedEmployeeCount: number;
+  affectedAttendanceDayCount: number;
+  dateFrom: string;
+  dateTo: string;
+}
+
+/**
+ * Mirrors apps/worker/src/processor.ts's scopeToEmployeeFilter (same duplication rationale
+ * as policy-resolution.ts: no shared business-logic package between apps/api and
+ * apps/worker today). EMPLOYEE scope is intentionally not handled here — callers must
+ * special-case it to `{ id: scopeId }`, matching the worker's recompute-event handler.
+ */
+function scopeToEmployeeFilter(
+  scopeType: PolicyScopeType,
+  scopeId: string,
+): Prisma.EmployeeWhereInput {
+  switch (scopeType) {
+    case 'LOCATION':
+      return { locationId: scopeId };
+    case 'DEPARTMENT':
+      return { departmentId: scopeId };
+    case 'EMPLOYEE_GROUP':
+      return { groupMemberships: { some: { groupId: scopeId } } };
+    case 'TENANT':
+    case 'EMPLOYEE':
+    default:
+      return {};
+  }
+}
+
+/** Flattens the two fields that make up a PolicyVersion's behavior into a shallow diff. */
+function diffPolicyFields(
+  before: { workingWeekdays: number[]; rules: unknown } | null,
+  after: { workingWeekdays: number[]; rules: unknown },
+): Array<{ field: string; from: unknown; to: unknown }> {
+  const diff: Array<{ field: string; from: unknown; to: unknown }> = [];
+  const beforeWeekdays = before ? [...before.workingWeekdays].sort() : null;
+  const afterWeekdays = [...after.workingWeekdays].sort();
+  if (JSON.stringify(beforeWeekdays) !== JSON.stringify(afterWeekdays)) {
+    diff.push({ field: 'workingWeekdays', from: beforeWeekdays, to: afterWeekdays });
+  }
+  const beforeRules = (before?.rules ?? {}) as Record<string, Record<string, unknown>>;
+  const afterRules = after.rules as Record<string, Record<string, unknown>>;
+  const groups = new Set([...Object.keys(beforeRules), ...Object.keys(afterRules)]);
+  for (const group of groups) {
+    const beforeGroup = beforeRules[group] ?? {};
+    const afterGroup = afterRules[group] ?? {};
+    const keys = new Set([...Object.keys(beforeGroup), ...Object.keys(afterGroup)]);
+    for (const key of keys) {
+      if (beforeGroup[key] !== afterGroup[key]) {
+        diff.push({
+          field: `rules.${group}.${key}`,
+          from: before ? (beforeGroup[key] ?? null) : null,
+          to: afterGroup[key] ?? null,
+        });
+      }
+    }
+  }
+  return diff;
 }

@@ -245,6 +245,8 @@ export interface AttendanceRegisterItem {
   firstPunchAt: string | null
   lastPunchAt: string | null
   version: number
+  policyVersionId: string | null
+  calculationTrace: CalculationTrace | null
   employee: Employee & {
     department: { id: string; name: string } | null
     location: { id: string; name: string } | null
@@ -325,6 +327,92 @@ export interface PayrollRegisterItem {
 export interface PayrollRegister extends Page<PayrollRegisterItem> {
   period: ProcessingPeriod
   readiness: { total: number; ready: number; blocked: number; readinessPercent: number }
+}
+
+export type PolicyScopeType = 'TENANT' | 'LOCATION' | 'DEPARTMENT' | 'EMPLOYEE_GROUP' | 'EMPLOYEE'
+export type PolicyVersionStatus = 'DRAFT' | 'PUBLISHED'
+
+export interface PolicyRules {
+  lateArrival: { graceMinutes: number }
+  earlyDeparture: { graceMinutes: number }
+  overtime: { thresholdMinutes: number; dailyCapMinutes: number | null; roundingMinutes: number }
+  halfDay: { halfDayThresholdMinutes: number }
+  absence: { lop: boolean }
+}
+
+export interface PolicyVersion {
+  id: string
+  scopeType: PolicyScopeType
+  scopeId: string
+  name: string
+  status: PolicyVersionStatus
+  effectiveFrom: string
+  workingWeekdays: number[]
+  rules: PolicyRules
+  version: number
+  publishedAt: string | null
+  publishedBy: string | null
+  supersedesId: string | null
+  createdBy: string
+  createdAt: string
+}
+
+export interface PolicyResolution {
+  policyVersion: PolicyVersion
+  rules: PolicyRules
+  scopeType: PolicyScopeType
+  scopeId: string
+  scopeChainEvaluated: Array<{ scopeType: PolicyScopeType; scopeId: string; matched: boolean }>
+}
+
+export interface PolicyPreview {
+  ruleDiff: Array<{ field: string; from: unknown; to: unknown }>
+  affectedEmployeeCount: number
+  affectedAttendanceDayCount: number
+  dateFrom: string
+  dateTo: string
+}
+
+export interface EmployeeGroup {
+  id: string
+  name: string
+  code: string
+  priority: number
+}
+
+export interface EmployeeGroupDetail extends EmployeeGroup {
+  members: Array<{
+    employeeId: string
+    employee: Pick<Employee, 'id' | 'employeeNumber' | 'firstName' | 'lastName'>
+  }>
+}
+
+export interface OrgUnitOption {
+  id: string
+  name: string
+  code: string
+}
+
+export interface CalculationTrace {
+  policyVersionId: string
+  scopeType: PolicyScopeType
+  scopeId: string
+  effectiveFrom: string
+  dayType: 'WORKING' | 'HOLIDAY' | 'WEEKEND'
+  workingWeekdays: number[]
+  holiday: { id: string; name: string } | null
+  rules: PolicyRules
+  computed: {
+    scheduledMinutes: number
+    workedMinutes: number
+    overtimeMinutes: number
+    lateMinutes: number
+    earlyDepartureMinutes: number
+    firstPunchAt: string | null
+    lastPunchAt: string | null
+  }
+  ruleEvaluations: Array<{ rule: string; triggered: boolean; [key: string]: unknown }>
+  computedAt: string
 }
 
 export interface AttendanceDashboard {
@@ -669,6 +757,73 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       }),
     getScimEvents: (samlConnectionId: string) =>
       request<ScimAuditEvent[]>(`/scim-admin/${samlConnectionId}/events`),
+    getPolicies: (
+      input: { scopeType?: PolicyScopeType; scopeId?: string; status?: PolicyVersionStatus } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ pageSize: '100', order: 'desc' })
+      if (input.scopeType) query.set('scopeType', input.scopeType)
+      if (input.scopeId) query.set('scopeId', input.scopeId)
+      if (input.status) query.set('status', input.status)
+      return request<Page<PolicyVersion>>(`/policies?${query}`, { signal })
+    },
+    getEffectivePolicies: (signal?: AbortSignal) =>
+      request<PolicyVersion[]>('/policies/effective', { signal }),
+    getPolicy: (id: string, signal?: AbortSignal) =>
+      request<PolicyVersion>(`/policies/${id}`, { signal }),
+    createPolicyDraft: (input: {
+      scopeType: PolicyScopeType
+      scopeId?: string
+      name: string
+      effectiveFrom: string
+      workingWeekdays: number[]
+      rules: PolicyRules
+    }) => request<PolicyVersion>('/policies', { method: 'POST', body: JSON.stringify(input) }),
+    updatePolicyDraft: (
+      id: string,
+      input: {
+        version: number
+        name?: string
+        effectiveFrom?: string
+        workingWeekdays?: number[]
+        rules?: PolicyRules
+      },
+    ) => request<PolicyVersion>(`/policies/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+    deletePolicyDraft: (id: string) => request<void>(`/policies/${id}`, { method: 'DELETE' }),
+    previewPolicyPublish: (id: string, signal?: AbortSignal) =>
+      request<PolicyPreview>(`/policies/${id}/preview`, { signal }),
+    publishPolicy: (id: string, version: number) =>
+      request<{ policyVersion: PolicyVersion; recomputeJobId: string }>(`/policies/${id}/publish`, {
+        method: 'POST',
+        body: JSON.stringify({ version }),
+      }),
+    resolvePolicy: (employeeId: string, date: string) =>
+      request<PolicyResolution>('/policies/resolve', {
+        method: 'POST',
+        body: JSON.stringify({ employeeId, date }),
+      }),
+    getEmployeeGroups: (signal?: AbortSignal) =>
+      request<EmployeeGroup[]>('/employee-groups', { signal }),
+    getEmployeeGroup: (id: string, signal?: AbortSignal) =>
+      request<EmployeeGroupDetail>(`/employee-groups/${id}`, { signal }),
+    createEmployeeGroup: (input: { name: string; code: string; priority?: number }) =>
+      request<EmployeeGroup>('/employee-groups', { method: 'POST', body: JSON.stringify(input) }),
+    updateEmployeeGroup: (id: string, input: { name?: string; priority?: number }) =>
+      request<EmployeeGroup>(`/employee-groups/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    addGroupMember: (id: string, employeeId: string) =>
+      request(`/employee-groups/${id}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ employeeId }),
+      }),
+    removeGroupMember: (id: string, employeeId: string) =>
+      request<void>(`/employee-groups/${id}/members/${employeeId}`, { method: 'DELETE' }),
+    getDepartments: (signal?: AbortSignal) =>
+      request<OrgUnitOption[]>('/departments', { signal }),
+    getLocations: (signal?: AbortSignal) =>
+      request<OrgUnitOption[]>('/locations', { signal }),
   }
 }
 
