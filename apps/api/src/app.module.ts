@@ -18,6 +18,7 @@ import { OrgModule } from './org/org.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { PoliciesModule } from './policies/policies.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RecomputeJobsModule } from './recompute-jobs/recompute-jobs.module';
 import { MeModule } from './me/me.module';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { SamlConnectionsModule } from './saml-connections/saml-connections.module';
@@ -35,6 +36,7 @@ import { ScimModule } from './scim/scim.module';
     EmployeeGroupsModule,
     OrgModule,
     HolidaysModule,
+    RecomputeJobsModule,
     MeModule,
     TenantUsersModule,
     SamlConnectionsModule,
