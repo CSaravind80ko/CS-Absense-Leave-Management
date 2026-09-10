@@ -13,6 +13,8 @@ import {
   type PolicyScopeType,
   type PolicyVersion,
   type PolicyVersionStatus,
+  type RecomputeJob,
+  type RecomputeJobStatus,
 } from '../lib/api'
 
 type Notify = (message: string, kind?: 'success' | 'warning') => void
@@ -22,6 +24,8 @@ const errorMessage = (error: unknown) =>
   error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Something went wrong.'
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
+const formatDateTime = (value: string) =>
+  new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 
 const WEEKDAYS: Array<[number, string]> = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [7, 'Sun']]
 
@@ -56,7 +60,7 @@ interface DraftForm {
 }
 
 export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notify: Notify }) {
-  const [tab, setTab] = useState<'policies' | 'groups' | 'holidays'>('policies')
+  const [tab, setTab] = useState<'policies' | 'groups' | 'holidays' | 'recomputes'>('policies')
   const [policies, setPolicies] = useState<PolicyVersion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -210,6 +214,7 @@ export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notif
       <button className={tab === 'policies' ? 'selected' : ''} onClick={() => setTab('policies')}>Policies</button>
       <button className={tab === 'groups' ? 'selected' : ''} onClick={() => setTab('groups')}>Employee groups</button>
       <button className={tab === 'holidays' ? 'selected' : ''} onClick={() => setTab('holidays')}>Holidays</button>
+      <button className={tab === 'recomputes' ? 'selected' : ''} onClick={() => setTab('recomputes')}>Recompute jobs</button>
     </div>
 
     {tab === 'policies' && <>
@@ -250,6 +255,8 @@ export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notif
     {tab === 'groups' && <EmployeeGroupsPanel api={api} groups={groups} employees={employees} onChanged={loadLookups} notify={notify}/>}
 
     {tab === 'holidays' && <HolidaysPanel api={api} locations={locations} notify={notify}/>}
+
+    {tab === 'recomputes' && <RecomputeJobsPanel api={api}/>}
 
     {draft && <div className="detail-panel">
       <div className="detail-head"><div><small>{draft.mode === 'create' ? 'CREATE POLICY' : 'EDIT DRAFT'}</small><h2>{draft.mode === 'create' ? 'New policy version' : draft.policy?.name}</h2><p>Changes are versioned; publishing supersedes the prior version for this scope.</p></div><button className="icon-button" onClick={() => setDraft(undefined)}><X size={18}/></button></div>
@@ -460,5 +467,57 @@ function HolidaysPanel({ api, locations, notify }: { api: ApiClient; locations: 
       </div>
       <button className="primary full" disabled={saving} onClick={() => void submit()}>{saving ? <><LoaderCircle className="spinner" size={16}/> Saving</> : form.mode === 'create' ? 'Add holiday' : 'Save holiday'}</button>
     </div>}
+  </>
+}
+
+const RECOMPUTE_STATUS_TONE: Record<RecomputeJobStatus, string> = {
+  PENDING: 'amber',
+  PROCESSING: 'blue',
+  COMPLETED: 'green',
+  FAILED: 'red',
+}
+
+function RecomputeJobsPanel({ api }: { api: ApiClient }) {
+  const [jobs, setJobs] = useState<RecomputeJob[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [statusFilter, setStatusFilter] = useState<RecomputeJobStatus | ''>('')
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const result = await api.getRecomputeJobs({ status: statusFilter || undefined, pageSize: 50 })
+      setJobs(result.items)
+    } catch (caught) { setError(errorMessage(caught)) } finally { setLoading(false) }
+  }, [api, statusFilter])
+  useEffect(() => { void load() }, [load])
+
+  const state = <LoadState loading={loading} error={error} empty={jobs.length === 0} retry={() => void load()}/>
+
+  return <>
+    <div className="page-top"><p>Every policy publish, employee-group change, and holiday change queues one of these; the worker claims and processes them asynchronously.</p></div>
+    <div className="filter-bar">
+      <select aria-label="Status" value={statusFilter} onChange={event => setStatusFilter(event.target.value as RecomputeJobStatus | '')}>
+        <option value="">All statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="PROCESSING">Processing</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="FAILED">Failed</option>
+      </select>
+    </div>
+    {(loading || error || jobs.length === 0) ? state : <section className="panel table-panel"><table><thead><tr><th>Reason</th><th>Scope</th><th>Date range</th><th>Status</th><th>Days matched / recomputed</th><th>Exceptions opened</th><th>Requested</th></tr></thead><tbody>
+      {jobs.map(job => <tr key={job.id}>
+        <td><b>{label(job.reason)}</b><small className="subline">{job.requestedBy}</small></td>
+        <td>{label(job.scopeType)}<small className="subline">{job.scopeId.slice(0, 8)}</small></td>
+        <td>{formatDate(job.dateFrom)} – {formatDate(job.dateTo)}</td>
+        <td>
+          <Badge tone={RECOMPUTE_STATUS_TONE[job.status]}>{label(job.status)}</Badge>
+          {job.status === 'FAILED' && job.errorMessage && <small className="subline form-error">{job.errorMessage}</small>}
+        </td>
+        <td>{job.daysMatched} / {job.daysRecomputed}</td>
+        <td>{job.exceptionsOpened}</td>
+        <td>{formatDateTime(job.createdAt)}</td>
+      </tr>)}
+    </tbody></table></section>}
   </>
 }
