@@ -13,6 +13,7 @@ import { EmployeeGroupsModule } from './employee-groups/employee-groups.module';
 import { EmployeesModule } from './employees/employees.module';
 import { ExceptionsModule } from './exceptions/exceptions.module';
 import { HealthController } from './health/health.controller';
+import { HolidaysModule } from './holidays/holidays.module';
 import { OrgModule } from './org/org.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { PoliciesModule } from './policies/policies.module';
@@ -33,6 +34,7 @@ import { ScimModule } from './scim/scim.module';
     PoliciesModule,
     EmployeeGroupsModule,
     OrgModule,
+    HolidaysModule,
     MeModule,
     TenantUsersModule,
     SamlConnectionsModule,
