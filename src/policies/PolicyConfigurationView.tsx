@@ -6,6 +6,7 @@ import {
   type Employee,
   type EmployeeGroup,
   type EmployeeGroupDetail,
+  type Holiday,
   type OrgUnitOption,
   type PolicyPreview,
   type PolicyRules,
@@ -55,7 +56,7 @@ interface DraftForm {
 }
 
 export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notify: Notify }) {
-  const [tab, setTab] = useState<'policies' | 'groups'>('policies')
+  const [tab, setTab] = useState<'policies' | 'groups' | 'holidays'>('policies')
   const [policies, setPolicies] = useState<PolicyVersion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -208,6 +209,7 @@ export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notif
     <div className="tabs">
       <button className={tab === 'policies' ? 'selected' : ''} onClick={() => setTab('policies')}>Policies</button>
       <button className={tab === 'groups' ? 'selected' : ''} onClick={() => setTab('groups')}>Employee groups</button>
+      <button className={tab === 'holidays' ? 'selected' : ''} onClick={() => setTab('holidays')}>Holidays</button>
     </div>
 
     {tab === 'policies' && <>
@@ -246,6 +248,8 @@ export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notif
     </>}
 
     {tab === 'groups' && <EmployeeGroupsPanel api={api} groups={groups} employees={employees} onChanged={loadLookups} notify={notify}/>}
+
+    {tab === 'holidays' && <HolidaysPanel api={api} locations={locations} notify={notify}/>}
 
     {draft && <div className="detail-panel">
       <div className="detail-head"><div><small>{draft.mode === 'create' ? 'CREATE POLICY' : 'EDIT DRAFT'}</small><h2>{draft.mode === 'create' ? 'New policy version' : draft.policy?.name}</h2><p>Changes are versioned; publishing supersedes the prior version for this scope.</p></div><button className="icon-button" onClick={() => setDraft(undefined)}><X size={18}/></button></div>
@@ -364,6 +368,97 @@ function EmployeeGroupsPanel({ api, groups, employees, onChanged, notify }: {
       <div className="timeline-detail"><h3>Members</h3>
         {detail.members.length === 0 ? <p>No members yet.</p> : detail.members.map(member => <p key={member.employeeId}><i></i><b>{member.employee.firstName} {member.employee.lastName}</b><span>{member.employee.employeeNumber}</span><button className="icon-button" onClick={() => void removeMember(member.employeeId)}><X size={14}/></button></p>)}
       </div>
+    </div>}
+  </>
+}
+
+interface HolidayForm {
+  mode: 'create' | 'edit'
+  holiday?: Holiday
+  name: string
+  date: string
+  locationId: string
+}
+
+function HolidaysPanel({ api, locations, notify }: { api: ApiClient; locations: OrgUnitOption[]; notify: Notify }) {
+  const [holidays, setHolidays] = useState<Holiday[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState<HolidayForm>()
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try { setHolidays(await api.getHolidays()) } catch (caught) { setError(errorMessage(caught)) } finally { setLoading(false) }
+  }, [api])
+  useEffect(() => { void load() }, [load])
+
+  const locationName = (id: string | null) =>
+    id ? (locations.find(l => l.id === id)?.name ?? id.slice(0, 8)) : 'Entire organization'
+
+  const openCreate = () => setForm({ mode: 'create', name: '', date: new Date().toISOString().slice(0, 10), locationId: '' })
+  const openEdit = (holiday: Holiday) =>
+    setForm({ mode: 'edit', holiday, name: holiday.name, date: holiday.date.slice(0, 10), locationId: holiday.locationId ?? '' })
+
+  const submit = async () => {
+    if (!form) return
+    setFormError('')
+    if (!form.name.trim()) { setFormError('Enter a holiday name.'); return }
+    setSaving(true)
+    try {
+      const input = { name: form.name.trim(), date: form.date, locationId: form.locationId || undefined }
+      if (form.mode === 'create') {
+        await api.createHoliday(input)
+        notify('Holiday added; the affected date is queued for recompute.')
+      } else if (form.holiday) {
+        await api.updateHoliday(form.holiday.id, input)
+        notify('Holiday updated; affected dates are queued for recompute.')
+      }
+      setForm(undefined)
+      await load()
+    } catch (caught) { setFormError(errorMessage(caught)) } finally { setSaving(false) }
+  }
+
+  const remove = async (holiday: Holiday) => {
+    try {
+      await api.deleteHoliday(holiday.id)
+      notify('Holiday deleted; the affected date is queued for recompute.')
+      await load()
+    } catch (caught) { setError(errorMessage(caught)) }
+  }
+
+  const state = <LoadState loading={loading} error={error} empty={holidays.length === 0} retry={() => void load()}/>
+
+  return <>
+    <div className="page-top">
+      <p>Holidays mark a date as non-working for policy calculation. Adding, editing, or removing one queues an automatic recompute for the affected date.</p>
+      <button className="secondary" onClick={openCreate}><Plus size={16}/> Add holiday</button>
+    </div>
+    {(loading || error || holidays.length === 0) ? state : <section className="panel table-panel"><table><thead><tr><th>Name</th><th>Date</th><th>Scope</th><th></th></tr></thead><tbody>
+      {holidays.map(holiday => <tr key={holiday.id}>
+        <td><b>{holiday.name}</b></td>
+        <td>{formatDate(holiday.date)}</td>
+        <td>{locationName(holiday.locationId)}</td>
+        <td><div className="table-actions">
+          <button className="secondary small" onClick={() => openEdit(holiday)}>Edit</button>
+          <button className="secondary small" onClick={() => void remove(holiday)}>Delete</button>
+        </div></td>
+      </tr>)}
+    </tbody></table></section>}
+
+    {form && <div className="detail-panel">
+      <div className="detail-head"><div><small>{form.mode === 'create' ? 'ADD HOLIDAY' : 'EDIT HOLIDAY'}</small><h2>{form.mode === 'create' ? 'New holiday' : form.holiday?.name}</h2></div><button className="icon-button" onClick={() => setForm(undefined)}><X size={18}/></button></div>
+      {formError && <p className="form-error">{formError}</p>}
+      <label>Name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="e.g. Founders Day"/></label>
+      <div className="form-grid">
+        <label>Date<input type="date" value={form.date} onChange={event => setForm({ ...form, date: event.target.value })}/></label>
+        <label>Location (blank = entire organization)<select value={form.locationId} onChange={event => setForm({ ...form, locationId: event.target.value })}>
+          <option value="">Entire organization</option>
+          {locations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
+        </select></label>
+      </div>
+      <button className="primary full" disabled={saving} onClick={() => void submit()}>{saving ? <><LoaderCircle className="spinner" size={16}/> Saving</> : form.mode === 'create' ? 'Add holiday' : 'Save holiday'}</button>
     </div>}
   </>
 }
