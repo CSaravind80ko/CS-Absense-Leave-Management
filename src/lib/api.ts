@@ -393,6 +393,13 @@ export interface OrgUnitOption {
   code: string
 }
 
+export interface Holiday {
+  id: string
+  name: string
+  date: string
+  locationId: string | null
+}
+
 export interface CalculationTrace {
   policyVersionId: string
   scopeType: PolicyScopeType
@@ -824,6 +831,18 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       request<OrgUnitOption[]>('/departments', { signal }),
     getLocations: (signal?: AbortSignal) =>
       request<OrgUnitOption[]>('/locations', { signal }),
+    getHolidays: (input: { locationId?: string; year?: string } = {}, signal?: AbortSignal) => {
+      const query = new URLSearchParams()
+      if (input.locationId) query.set('locationId', input.locationId)
+      if (input.year) query.set('year', input.year)
+      const suffix = query.toString() ? `?${query}` : ''
+      return request<Holiday[]>(`/holidays${suffix}`, { signal })
+    },
+    createHoliday: (input: { name: string; date: string; locationId?: string }) =>
+      request<Holiday>('/holidays', { method: 'POST', body: JSON.stringify(input) }),
+    updateHoliday: (id: string, input: { name: string; date: string; locationId?: string }) =>
+      request<Holiday>(`/holidays/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+    deleteHoliday: (id: string) => request<void>(`/holidays/${id}`, { method: 'DELETE' }),
   }
 }
 
