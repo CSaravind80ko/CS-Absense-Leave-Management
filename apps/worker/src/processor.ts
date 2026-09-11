@@ -1032,6 +1032,8 @@ function scopeToEmployeeFilter(
       return { departmentId: scopeId };
     case 'EMPLOYEE_GROUP':
       return { groupMemberships: { some: { groupId: scopeId } } };
+    case 'SHIFT':
+      return { shiftId: scopeId };
     case 'TENANT':
     case 'EMPLOYEE':
     default:

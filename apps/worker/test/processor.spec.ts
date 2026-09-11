@@ -142,6 +142,7 @@ describe('AttendanceEventProcessor recompute handling', () => {
     ['LOCATION', 'loc-1', { locationId: 'loc-1' }],
     ['DEPARTMENT', 'dept-1', { departmentId: 'dept-1' }],
     ['EMPLOYEE_GROUP', 'group-1', { groupMemberships: { some: { groupId: 'group-1' } } }],
+    ['SHIFT', 'shift-1', { shiftId: 'shift-1' }],
     ['TENANT', tenantId, {}],
   ] as const)('builds the correct employee filter for %s scope', async (scopeType, scopeId, expectedFilter) => {
     const tx = makeTx();
