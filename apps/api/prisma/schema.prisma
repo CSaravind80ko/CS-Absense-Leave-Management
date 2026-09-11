@@ -185,6 +185,10 @@ enum PolicyScopeType {
   DEPARTMENT
   EMPLOYEE_GROUP
   EMPLOYEE
+  /// Recompute-job scope only ("every employee currently on this shift"). Not a valid
+  /// PolicyVersion scope: PoliciesService.scopeExists has no SHIFT case, so creating or
+  /// publishing a policy with this scope is rejected by resolveScopeId's default-false path.
+  SHIFT
 }
 
 enum PolicyVersionStatus {
