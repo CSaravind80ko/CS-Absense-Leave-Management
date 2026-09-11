@@ -400,6 +400,18 @@ export interface Holiday {
   locationId: string | null
 }
 
+export interface Shift {
+  id: string
+  name: string
+  code: string
+  startMinutes: number
+  endMinutes: number
+  breakMinutes: number
+  graceMinutes: number
+  crossesMidnight: boolean
+  locationId: string | null
+}
+
 export type RecomputeJobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
 
 export interface RecomputeJob {
@@ -877,6 +889,28 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
     },
     getRecomputeJob: (id: string, signal?: AbortSignal) =>
       request<RecomputeJob>(`/recompute-jobs/${id}`, { signal }),
+    getShifts: (signal?: AbortSignal) => request<Shift[]>('/shifts', { signal }),
+    createShift: (input: {
+      name: string
+      code: string
+      startMinutes: number
+      endMinutes: number
+      breakMinutes?: number
+      graceMinutes?: number
+      crossesMidnight?: boolean
+      locationId?: string
+    }) => request<Shift>('/shifts', { method: 'POST', body: JSON.stringify(input) }),
+    updateShift: (id: string, input: {
+      name: string
+      startMinutes: number
+      endMinutes: number
+      breakMinutes?: number
+      graceMinutes?: number
+      crossesMidnight?: boolean
+      locationId?: string
+    }) => request<Shift>(`/shifts/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+    deleteShift: (id: string) =>
+      request<{ unassignedEmployeeCount: number }>(`/shifts/${id}`, { method: 'DELETE' }),
   }
 }
 
