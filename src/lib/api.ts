@@ -400,6 +400,28 @@ export interface Holiday {
   locationId: string | null
 }
 
+export type RecomputeJobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+
+export interface RecomputeJob {
+  id: string
+  scopeType: PolicyScopeType
+  scopeId: string
+  dateFrom: string
+  dateTo: string
+  reason: string
+  triggeredByPolicyVersionId: string | null
+  requestedBy: string
+  status: RecomputeJobStatus
+  daysMatched: number
+  daysRecomputed: number
+  exceptionsOpened: number
+  errorCode: string | null
+  errorMessage: string | null
+  startedAt: string | null
+  completedAt: string | null
+  createdAt: string
+}
+
 export interface CalculationTrace {
   policyVersionId: string
   scopeType: PolicyScopeType
@@ -843,6 +865,18 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
     updateHoliday: (id: string, input: { name: string; date: string; locationId?: string }) =>
       request<Holiday>(`/holidays/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
     deleteHoliday: (id: string) => request<void>(`/holidays/${id}`, { method: 'DELETE' }),
+    getRecomputeJobs: (
+      input: { status?: RecomputeJobStatus; page?: number; pageSize?: number } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ order: 'desc' })
+      if (input.status) query.set('status', input.status)
+      if (input.page) query.set('page', String(input.page))
+      if (input.pageSize) query.set('pageSize', String(input.pageSize))
+      return request<Page<RecomputeJob>>(`/recompute-jobs?${query}`, { signal })
+    },
+    getRecomputeJob: (id: string, signal?: AbortSignal) =>
+      request<RecomputeJob>(`/recompute-jobs/${id}`, { signal }),
   }
 }
 
