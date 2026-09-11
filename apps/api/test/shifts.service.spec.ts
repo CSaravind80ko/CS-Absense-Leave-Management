@@ -89,13 +89,19 @@ describe('ShiftsService.update', () => {
 
   it('does not accept a code field even if present on the input object', async () => {
     // UpdateShiftDto has no `code` property, so nothing in the service ever reads dto.code;
-    // this just documents the intent for future readers.
+    // this just documents the intent for future readers. Timing fields match `existing` so
+    // this also exercises the no-recompute-needed path.
     const tx = {
       shift: { update: jest.fn().mockResolvedValue({ id: shiftId }) },
       auditEvent: { create: jest.fn().mockResolvedValue({}) },
     };
     const prisma = {
-      shift: { findFirst: jest.fn().mockResolvedValue({ id: shiftId, tenantId, code: 'GEN' }) },
+      shift: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: shiftId, tenantId, code: 'GEN',
+          startMinutes: 540, endMinutes: 1080, breakMinutes: 0, graceMinutes: 0, crossesMidnight: false,
+        }),
+      },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
     } as unknown as PrismaService;
     const service = new ShiftsService(prisma);
@@ -108,6 +114,77 @@ describe('ShiftsService.update', () => {
 
     expect(tx.shift.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.not.objectContaining({ code: expect.anything() }) }),
+    );
+  });
+
+  it('does not enqueue a recompute when only the name or location changes', async () => {
+    const tx = {
+      shift: { update: jest.fn().mockResolvedValue({ id: shiftId }) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      policyRecomputeJob: { create: jest.fn() },
+    };
+    const prisma = {
+      shift: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: shiftId, tenantId,
+          startMinutes: 540, endMinutes: 1080, breakMinutes: 60, graceMinutes: 10, crossesMidnight: false,
+        }),
+      },
+      location: { findFirst: jest.fn().mockResolvedValue({ id: locationId }) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ShiftsService(prisma);
+
+    await service.update(tenantId, shiftId, 'actor', {
+      name: 'Renamed Shift',
+      startMinutes: 540,
+      endMinutes: 1080,
+      breakMinutes: 60,
+      graceMinutes: 10,
+      crossesMidnight: false,
+      locationId,
+    });
+
+    expect(tx.policyRecomputeJob.create).not.toHaveBeenCalled();
+  });
+
+  it('enqueues a SHIFT-scoped recompute job when a calculation-affecting field changes', async () => {
+    const recomputeJobCreate = jest.fn().mockResolvedValue({ id: 'recompute-job-id' });
+    const tx = {
+      shift: { update: jest.fn().mockResolvedValue({ id: shiftId }) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      policyRecomputeJob: { create: recomputeJobCreate },
+      outboxEvent: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      shift: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: shiftId, tenantId,
+          startMinutes: 540, endMinutes: 1080, breakMinutes: 60, graceMinutes: 10, crossesMidnight: false,
+        }),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ShiftsService(prisma);
+
+    await service.update(tenantId, shiftId, 'actor', {
+      name: 'General Shift',
+      startMinutes: 570, // moved 30 minutes later
+      endMinutes: 1080,
+      breakMinutes: 60,
+      graceMinutes: 10,
+      crossesMidnight: false,
+    });
+
+    expect(recomputeJobCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tenantId,
+          scopeType: 'SHIFT',
+          scopeId: shiftId,
+          reason: 'SHIFT_TIMING_CHANGED',
+        }),
+      }),
     );
   });
 });
@@ -124,27 +201,67 @@ describe('ShiftsService.delete', () => {
     );
   });
 
-  it('reports how many employees are unassigned by the delete', async () => {
+  it('reports how many employees are unassigned by the delete and recomputes each of them', async () => {
+    const recomputeJobCreate = jest.fn().mockResolvedValue({ id: 'recompute-job-id' });
     const tx = {
       shift: { delete: jest.fn().mockResolvedValue({}) },
       auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      policyRecomputeJob: { create: recomputeJobCreate },
+      outboxEvent: { create: jest.fn().mockResolvedValue({}) },
     };
     const prisma = {
       shift: {
         findFirst: jest.fn().mockResolvedValue({ id: shiftId, tenantId, name: 'General Shift', code: 'GEN' }),
       },
-      employee: { count: jest.fn().mockResolvedValue(7) },
+      employee: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'emp-1' }, { id: 'emp-2' }]),
+      },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
     } as unknown as PrismaService;
     const service = new ShiftsService(prisma);
 
     const result = await service.delete(tenantId, shiftId, 'actor');
 
-    expect(result).toEqual({ unassignedEmployeeCount: 7 });
+    expect(result).toEqual({ unassignedEmployeeCount: 2 });
     expect(tx.auditEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ metadata: { unassignedEmployeeCount: 7 } }),
+        data: expect.objectContaining({ metadata: { unassignedEmployeeCount: 2 } }),
       }),
     );
+    // One EMPLOYEE-scoped job per affected employee, not a single SHIFT-scoped job - the
+    // shift row (and its FK) is already gone by the time these jobs would run.
+    expect(recomputeJobCreate).toHaveBeenCalledTimes(2);
+    expect(recomputeJobCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ scopeType: 'EMPLOYEE', scopeId: 'emp-1', reason: 'SHIFT_DELETED' }),
+      }),
+    );
+    expect(recomputeJobCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ scopeType: 'EMPLOYEE', scopeId: 'emp-2', reason: 'SHIFT_DELETED' }),
+      }),
+    );
+  });
+
+  it('enqueues no recompute jobs when no employees were assigned', async () => {
+    const recomputeJobCreate = jest.fn();
+    const tx = {
+      shift: { delete: jest.fn().mockResolvedValue({}) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      policyRecomputeJob: { create: recomputeJobCreate },
+    };
+    const prisma = {
+      shift: {
+        findFirst: jest.fn().mockResolvedValue({ id: shiftId, tenantId, name: 'General Shift', code: 'GEN' }),
+      },
+      employee: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ShiftsService(prisma);
+
+    const result = await service.delete(tenantId, shiftId, 'actor');
+
+    expect(result).toEqual({ unassignedEmployeeCount: 0 });
+    expect(recomputeJobCreate).not.toHaveBeenCalled();
   });
 });
