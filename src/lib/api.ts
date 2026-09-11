@@ -422,6 +422,19 @@ export interface RecomputeJob {
   createdAt: string
 }
 
+export interface AuditEvent {
+  id: string
+  actorSubject: string
+  action: string
+  entityType: string
+  entityId: string | null
+  occurredAt: string
+  requestId: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  metadata: Record<string, unknown> | null
+}
+
 export interface CalculationTrace {
   policyVersionId: string
   scopeType: PolicyScopeType
@@ -877,6 +890,30 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
     },
     getRecomputeJob: (id: string, signal?: AbortSignal) =>
       request<RecomputeJob>(`/recompute-jobs/${id}`, { signal }),
+    getAuditEvents: (
+      input: {
+        entityType?: string
+        entityId?: string
+        actorSubject?: string
+        dateFrom?: string
+        dateTo?: string
+        page?: number
+        pageSize?: number
+      } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ order: 'desc' })
+      if (input.entityType) query.set('entityType', input.entityType)
+      if (input.entityId) query.set('entityId', input.entityId)
+      if (input.actorSubject) query.set('actorSubject', input.actorSubject)
+      if (input.dateFrom) query.set('dateFrom', input.dateFrom)
+      if (input.dateTo) query.set('dateTo', input.dateTo)
+      if (input.page) query.set('page', String(input.page))
+      if (input.pageSize) query.set('pageSize', String(input.pageSize))
+      return request<Page<AuditEvent>>(`/audit-events?${query}`, { signal })
+    },
+    getAuditEventEntityTypes: (signal?: AbortSignal) =>
+      request<string[]>('/audit-events/entity-types', { signal }),
   }
 }
 
