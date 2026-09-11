@@ -5,6 +5,7 @@ import {
   Plus, Search, Settings2, ShieldCheck, Sparkles, Upload, Users, X,
 } from 'lucide-react'
 import './App.css'
+import { AuditTrailView } from './audit/AuditTrailView'
 import { AuthGate } from './auth/AuthScreens'
 import { useAuth } from './auth/useAuth'
 import { EmployeesView } from './employees/EmployeesView'
@@ -179,6 +180,7 @@ function PrototypeApp({ tenants, tenantId, onTenantChange }: { tenants: TenantMe
     if (view === 'Rule Configuration') return <PolicyConfigurationView api={api} notify={notify} />
     if (view === 'User & Role Management') return <UserManagementView getAccessToken={getAccessToken} tenantId={tenantId} />
     if (view === 'Integration Settings') return <Integrations notify={notify} />
+    if (view === 'Audit Trail') return <AuditTrailView api={api} />
     return <GenericPage title={view} />
   }, [view, persona, getAccessToken, tenantId, api, periods, selectedPeriodId, selectedPeriod, selectedTenant.role, periodLoading, periodError, loadPeriods])
 
