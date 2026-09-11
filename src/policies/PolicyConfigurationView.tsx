@@ -15,6 +15,7 @@ import {
   type PolicyVersionStatus,
   type RecomputeJob,
   type RecomputeJobStatus,
+  type Shift,
 } from '../lib/api'
 
 type Notify = (message: string, kind?: 'success' | 'warning') => void
@@ -26,6 +27,12 @@ const formatDate = (value: string) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
 const formatDateTime = (value: string) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+const minutesToTime = (minutes: number) =>
+  `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`
+const timeToMinutes = (value: string) => {
+  const [hours, mins] = value.split(':').map(Number)
+  return hours * 60 + mins
+}
 
 const WEEKDAYS: Array<[number, string]> = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [7, 'Sun']]
 
@@ -60,7 +67,7 @@ interface DraftForm {
 }
 
 export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notify: Notify }) {
-  const [tab, setTab] = useState<'policies' | 'groups' | 'holidays' | 'recomputes'>('policies')
+  const [tab, setTab] = useState<'policies' | 'groups' | 'holidays' | 'recomputes' | 'shifts'>('policies')
   const [policies, setPolicies] = useState<PolicyVersion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -215,6 +222,7 @@ export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notif
       <button className={tab === 'groups' ? 'selected' : ''} onClick={() => setTab('groups')}>Employee groups</button>
       <button className={tab === 'holidays' ? 'selected' : ''} onClick={() => setTab('holidays')}>Holidays</button>
       <button className={tab === 'recomputes' ? 'selected' : ''} onClick={() => setTab('recomputes')}>Recompute jobs</button>
+      <button className={tab === 'shifts' ? 'selected' : ''} onClick={() => setTab('shifts')}>Shifts</button>
     </div>
 
     {tab === 'policies' && <>
@@ -257,6 +265,8 @@ export function PolicyConfigurationView({ api, notify }: { api: ApiClient; notif
     {tab === 'holidays' && <HolidaysPanel api={api} locations={locations} notify={notify}/>}
 
     {tab === 'recomputes' && <RecomputeJobsPanel api={api}/>}
+
+    {tab === 'shifts' && <ShiftsPanel api={api} locations={locations} notify={notify}/>}
 
     {draft && <div className="detail-panel">
       <div className="detail-head"><div><small>{draft.mode === 'create' ? 'CREATE POLICY' : 'EDIT DRAFT'}</small><h2>{draft.mode === 'create' ? 'New policy version' : draft.policy?.name}</h2><p>Changes are versioned; publishing supersedes the prior version for this scope.</p></div><button className="icon-button" onClick={() => setDraft(undefined)}><X size={18}/></button></div>
@@ -519,5 +529,134 @@ function RecomputeJobsPanel({ api }: { api: ApiClient }) {
         <td>{formatDateTime(job.createdAt)}</td>
       </tr>)}
     </tbody></table></section>}
+  </>
+}
+
+interface ShiftForm {
+  mode: 'create' | 'edit'
+  shift?: Shift
+  name: string
+  code: string
+  startTime: string
+  endTime: string
+  breakMinutes: number
+  graceMinutes: number
+  crossesMidnight: boolean
+  locationId: string
+}
+
+function ShiftsPanel({ api, locations, notify }: { api: ApiClient; locations: OrgUnitOption[]; notify: Notify }) {
+  const [shifts, setShifts] = useState<Shift[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState<ShiftForm>()
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try { setShifts(await api.getShifts()) } catch (caught) { setError(errorMessage(caught)) } finally { setLoading(false) }
+  }, [api])
+  useEffect(() => { void load() }, [load])
+
+  const locationName = (id: string | null) =>
+    id ? (locations.find(l => l.id === id)?.name ?? id.slice(0, 8)) : 'Any location'
+
+  const openCreate = () => setForm({
+    mode: 'create', name: '', code: '', startTime: '09:00', endTime: '18:00',
+    breakMinutes: 60, graceMinutes: 10, crossesMidnight: false, locationId: '',
+  })
+  const openEdit = (shift: Shift) => setForm({
+    mode: 'edit',
+    shift,
+    name: shift.name,
+    code: shift.code,
+    startTime: minutesToTime(shift.startMinutes),
+    endTime: minutesToTime(shift.endMinutes),
+    breakMinutes: shift.breakMinutes,
+    graceMinutes: shift.graceMinutes,
+    crossesMidnight: shift.crossesMidnight,
+    locationId: shift.locationId ?? '',
+  })
+
+  const submit = async () => {
+    if (!form) return
+    setFormError('')
+    if (!form.name.trim()) { setFormError('Enter a shift name.'); return }
+    if (form.mode === 'create' && !form.code.trim()) { setFormError('Enter a shift code.'); return }
+    setSaving(true)
+    try {
+      const shared = {
+        name: form.name.trim(),
+        startMinutes: timeToMinutes(form.startTime),
+        endMinutes: timeToMinutes(form.endTime),
+        breakMinutes: form.breakMinutes,
+        graceMinutes: form.graceMinutes,
+        crossesMidnight: form.crossesMidnight,
+        locationId: form.locationId || undefined,
+      }
+      if (form.mode === 'create') {
+        await api.createShift({ ...shared, code: form.code.trim() })
+        notify('Shift created.')
+      } else if (form.shift) {
+        await api.updateShift(form.shift.id, shared)
+        notify('Shift updated. Employees already assigned keep their existing attendance calculations until the next recompute.')
+      }
+      setForm(undefined)
+      await load()
+    } catch (caught) { setFormError(errorMessage(caught)) } finally { setSaving(false) }
+  }
+
+  const remove = async (shift: Shift) => {
+    try {
+      const result = await api.deleteShift(shift.id)
+      notify(result.unassignedEmployeeCount > 0
+        ? `Shift deleted; ${result.unassignedEmployeeCount} employee(s) are now unassigned.`
+        : 'Shift deleted.')
+      await load()
+    } catch (caught) { setError(errorMessage(caught)) }
+  }
+
+  const state = <LoadState loading={loading} error={error} empty={shifts.length === 0} retry={() => void load()}/>
+
+  return <>
+    <div className="page-top">
+      <p>Shift timing drives scheduled minutes and late/early/overtime calculation. Changes here are not automatically recomputed against past attendance.</p>
+      <button className="secondary" onClick={openCreate}><Plus size={16}/> Add shift</button>
+    </div>
+    {(loading || error || shifts.length === 0) ? state : <section className="panel table-panel"><table><thead><tr><th>Name</th><th>Code</th><th>Time</th><th>Break / grace</th><th>Location</th><th></th></tr></thead><tbody>
+      {shifts.map(shift => <tr key={shift.id}>
+        <td><b>{shift.name}</b></td>
+        <td>{shift.code}</td>
+        <td>{minutesToTime(shift.startMinutes)} – {minutesToTime(shift.endMinutes)}{shift.crossesMidnight ? ' (+1 day)' : ''}</td>
+        <td>{shift.breakMinutes}m break · {shift.graceMinutes}m grace</td>
+        <td>{locationName(shift.locationId)}</td>
+        <td><div className="table-actions">
+          <button className="secondary small" onClick={() => openEdit(shift)}>Edit</button>
+          <button className="secondary small" onClick={() => void remove(shift)}>Delete</button>
+        </div></td>
+      </tr>)}
+    </tbody></table></section>}
+
+    {form && <div className="detail-panel">
+      <div className="detail-head"><div><small>{form.mode === 'create' ? 'ADD SHIFT' : 'EDIT SHIFT'}</small><h2>{form.mode === 'create' ? 'New shift' : form.shift?.name}</h2></div><button className="icon-button" onClick={() => setForm(undefined)}><X size={18}/></button></div>
+      {formError && <p className="form-error">{formError}</p>}
+      <div className="form-grid">
+        <label>Name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="e.g. General Shift"/></label>
+        <label>Code<input value={form.code} disabled={form.mode === 'edit'} onChange={event => setForm({ ...form, code: event.target.value })} placeholder="e.g. GEN"/></label>
+      </div>
+      <div className="form-grid">
+        <label>Start time<input type="time" value={form.startTime} onChange={event => setForm({ ...form, startTime: event.target.value })}/></label>
+        <label>End time<input type="time" value={form.endTime} onChange={event => setForm({ ...form, endTime: event.target.value })}/></label>
+        <label>Break (minutes)<input type="number" min={0} max={720} value={form.breakMinutes} onChange={event => setForm({ ...form, breakMinutes: Number(event.target.value) })}/></label>
+        <label>Grace (minutes)<input type="number" min={0} max={240} value={form.graceMinutes} onChange={event => setForm({ ...form, graceMinutes: Number(event.target.value) })}/></label>
+        <label>Location (blank = any)<select value={form.locationId} onChange={event => setForm({ ...form, locationId: event.target.value })}>
+          <option value="">Any location</option>
+          {locations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
+        </select></label>
+      </div>
+      <label><input type="checkbox" checked={form.crossesMidnight} onChange={event => setForm({ ...form, crossesMidnight: event.target.checked })} style={{ width: 'auto' }}/> Shift crosses midnight</label>
+      <button className="primary full" disabled={saving} onClick={() => void submit()}>{saving ? <><LoaderCircle className="spinner" size={16}/> Saving</> : form.mode === 'create' ? 'Add shift' : 'Save shift'}</button>
+    </div>}
   </>
 }

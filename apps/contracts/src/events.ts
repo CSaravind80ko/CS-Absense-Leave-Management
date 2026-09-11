@@ -14,6 +14,7 @@ export const POLICY_SCOPE_TYPES = [
   'DEPARTMENT',
   'EMPLOYEE_GROUP',
   'EMPLOYEE',
+  'SHIFT',
 ] as const;
 
 export type PolicyScopeType = (typeof POLICY_SCOPE_TYPES)[number];

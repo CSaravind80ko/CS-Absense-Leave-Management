@@ -1,0 +1,32 @@
+-- AlterEnum
+ALTER TYPE "PolicyScopeType" ADD VALUE 'SHIFT';
+
+-- RenameForeignKey
+ALTER TABLE "ScimGroupRoleMapping" RENAME CONSTRAINT "ScimGroupRoleMapping_groupId_tenantId_provisioningConnectionId_" TO "ScimGroupRoleMapping_groupId_tenantId_provisioningConnecti_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "ScimProvisioningConnection" RENAME CONSTRAINT "ScimProvisioningConnection_samlConnectionId_tenantId_identityCo" TO "ScimProvisioningConnection_samlConnectionId_tenantId_ident_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "ScimUser" RENAME CONSTRAINT "ScimUser_externalIdentityId_tenantId_tenantMembershipId_identit" TO "ScimUser_externalIdentityId_tenantId_tenantMembershipId_id_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "ScimUser" RENAME CONSTRAINT "ScimUser_provisioningConnectionId_tenantId_identityConnectionId" TO "ScimUser_provisioningConnectionId_tenantId_identityConnect_fkey";
+
+-- RenameIndex
+ALTER INDEX "ExternalIdentity_id_tenantId_tenantMembershipId_connectionId_ke" RENAME TO "ExternalIdentity_id_tenantId_tenantMembershipId_connectionI_key";
+
+-- RenameIndex
+ALTER INDEX "PolicyVersion_tenantId_scopeType_scopeId_status_effectiveFrom_i" RENAME TO "PolicyVersion_tenantId_scopeType_scopeId_status_effectiveFr_idx";
+
+-- RenameIndex
+ALTER INDEX "ScimGroupRoleMapping_groupId_tenantId_provisioningConnectionId_" RENAME TO "ScimGroupRoleMapping_groupId_tenantId_provisioningConnectio_key";
+
+-- RenameIndex
+ALTER INDEX "ScimIdempotencyRecord_provisioningConnectionId_idempotencyKey_k" RENAME TO "ScimIdempotencyRecord_provisioningConnectionId_idempotencyK_key";
+
+-- RenameIndex
+ALTER INDEX "ScimProvisioningConnection_samlConnectionId_tenantId_identityCo" RENAME TO "ScimProvisioningConnection_samlConnectionId_tenantId_identi_key";
+
+-- RenameIndex
+ALTER INDEX "ScimUser_externalIdentityId_tenantId_tenantMembershipId_identit" RENAME TO "ScimUser_externalIdentityId_tenantId_tenantMembershipId_ide_key";
