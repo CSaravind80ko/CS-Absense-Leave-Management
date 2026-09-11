@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { AuditEventsModule } from './audit-events/audit-events.module';
 import { IdentityDiscoveryController } from './auth/identity-discovery.controller';
 import { IdentityDiscoveryService } from './auth/identity-discovery.service';
 import { IdentityMembershipService } from './auth/identity-membership.service';
@@ -29,6 +30,7 @@ import { ScimModule } from './scim/scim.module';
     PrismaModule,
     EmployeesModule,
     AttendanceModule,
+    AuditEventsModule,
     ExceptionsModule,
     ApprovalsModule,
     PayrollModule,
