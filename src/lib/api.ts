@@ -341,9 +341,30 @@ export interface LeaveRequest {
   approvalRequests: Array<{ id: string; version: number; status: string }>
 }
 
+export type OnDutyCategory = 'CLIENT_VISIT' | 'GOVERNMENT_OFFICE' | 'TRAINING' | 'CONFERENCE' | 'OTHER'
+export type OnDutyRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+
+export interface OnDutyRequest {
+  id: string
+  employeeId: string
+  category: OnDutyCategory
+  startDate: string
+  endDate: string
+  halfDay: boolean
+  totalDays: string
+  location: string | null
+  reason: string
+  status: OnDutyRequestStatus
+  version: number
+  decidedAt: string | null
+  createdAt: string
+  employee: Pick<Employee, 'id' | 'employeeNumber' | 'firstName' | 'lastName'>
+  approvalRequests: Array<{ id: string; version: number; status: string }>
+}
+
 export interface ApprovalRequest {
   id: string
-  type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT' | 'LEAVE'
+  type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT' | 'LEAVE' | 'ON_DUTY'
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
   requestedBy: string
   assigneeSubject: string | null
@@ -353,6 +374,7 @@ export interface ApprovalRequest {
   period: Pick<ProcessingPeriod, 'id' | 'name' | 'startsOn' | 'endsOn'> | null
   exception: AttendanceException | null
   leaveRequest: LeaveRequest | null
+  onDutyRequest: OnDutyRequest | null
   actions: ApprovalAction[]
 }
 
@@ -1029,6 +1051,22 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
     submitLeaveRequest: (input: {
       leaveTypeId: string; startDate: string; endDate: string; halfDay?: boolean; reason?: string
     }) => request<LeaveRequest>('/leave-requests', { method: 'POST', body: JSON.stringify(input) }),
+    getOnDutyRequests: (
+      input: { employeeId?: string; status?: OnDutyRequestStatus; page?: number; pageSize?: number } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ order: 'desc' })
+      if (input.employeeId) query.set('employeeId', input.employeeId)
+      if (input.status) query.set('status', input.status)
+      if (input.page) query.set('page', String(input.page))
+      if (input.pageSize) query.set('pageSize', String(input.pageSize))
+      return request<Page<OnDutyRequest>>(`/on-duty-requests?${query}`, { signal })
+    },
+    getOnDutyRequest: (id: string, signal?: AbortSignal) =>
+      request<OnDutyRequest>(`/on-duty-requests/${id}`, { signal }),
+    submitOnDutyRequest: (input: {
+      category: OnDutyCategory; startDate: string; endDate: string; halfDay?: boolean; location?: string; reason: string
+    }) => request<OnDutyRequest>('/on-duty-requests', { method: 'POST', body: JSON.stringify(input) }),
   }
 }
 
