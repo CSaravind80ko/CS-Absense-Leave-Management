@@ -50,6 +50,7 @@ function makeTx(options: {
   shift?: Record<string, unknown> | null;
   punches: ReturnType<typeof punch>[];
   holidays?: Array<{ id: string; name: string; locationId: string | null }>;
+  approvedLeave?: { id: string; halfDay: boolean; leaveType: { name: string } } | null;
   exceptionCreateManyCount?: number | 'echo';
 }) {
   const shift =
@@ -79,6 +80,9 @@ function makeTx(options: {
     },
     holiday: {
       findMany: jest.fn().mockResolvedValue(options.holidays ?? []),
+    },
+    leaveRequest: {
+      findFirst: jest.fn().mockResolvedValue(options.approvedLeave ?? null),
     },
     attendanceDay: { upsert: attendanceDayUpsert },
     attendanceException: { createMany: attendanceExceptionCreateMany },
@@ -213,6 +217,37 @@ describe('recomputeDay', () => {
       id: 'location-specific',
       name: 'Regional Holiday',
     });
+  });
+
+  it('treats an approved leave day as LEAVE with zero scheduled minutes and no ABSENCE exception', async () => {
+    mockPolicy({});
+    const { tx, attendanceDayUpsert, attendanceExceptionCreateMany } = makeTx({
+      punches: [],
+      approvedLeave: { id: 'leave-1', halfDay: false, leaveType: { name: 'Casual Leave' } },
+    });
+    await recomputeDay(tx, { tenantId, periodId, employeeId, workDate, timezone: 'UTC' });
+    const createArgs = attendanceDayUpsert.mock.calls[0][0].create;
+    expect(createArgs.status).toBe('LEAVE');
+    expect(createArgs.scheduledMinutes).toBe(0);
+    expect(createArgs.calculationTrace.leave).toMatchObject({
+      id: 'leave-1',
+      leaveTypeName: 'Casual Leave',
+      halfDay: false,
+    });
+    expect(exceptionTypes(attendanceExceptionCreateMany)).not.toContain('ABSENCE');
+    expect(exceptionTypes(attendanceExceptionCreateMany)).not.toContain('MISSING_PUNCH');
+  });
+
+  it('a HOLIDAY takes precedence over an approved leave on the same date', async () => {
+    mockPolicy({});
+    const { tx, attendanceDayUpsert } = makeTx({
+      punches: [],
+      holidays: [{ id: 'holiday-1', name: 'Founders Day', locationId: null }],
+      approvedLeave: { id: 'leave-1', halfDay: false, leaveType: { name: 'Casual Leave' } },
+    });
+    await recomputeDay(tx, { tenantId, periodId, employeeId, workDate, timezone: 'UTC' });
+    const createArgs = attendanceDayUpsert.mock.calls[0][0].create;
+    expect(createArgs.status).toBe('HOLIDAY');
   });
 
   it('treats a non-working weekday as WEEKEND', async () => {
