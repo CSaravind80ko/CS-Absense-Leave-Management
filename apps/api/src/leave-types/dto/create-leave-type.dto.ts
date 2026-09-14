@@ -20,4 +20,9 @@ export class CreateLeaveTypeDto {
   @Min(0)
   @Max(365)
   defaultAnnualDays?: number;
+
+  // Marks the type an approved CompOffCredit deposits days into.
+  @IsOptional()
+  @IsBoolean()
+  isCompOff?: boolean;
 }

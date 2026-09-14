@@ -19,4 +19,8 @@ export class UpdateLeaveTypeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isCompOff?: boolean;
 }

@@ -309,6 +309,7 @@ export interface LeaveType {
   // Decimal fields serialize as strings.
   defaultAnnualDays: string | null
   active: boolean
+  isCompOff: boolean
 }
 
 export interface LeaveBalance {
@@ -362,9 +363,33 @@ export interface OnDutyRequest {
   approvalRequests: Array<{ id: string; version: number; status: string }>
 }
 
+export type CompOffCreditStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+
+export interface CompOffCredit {
+  id: string
+  employeeId: string
+  workedDate: string
+  workedMinutes: number
+  creditDays: string
+  reason: string | null
+  status: CompOffCreditStatus
+  expiresAt: string | null
+  version: number
+  decidedAt: string | null
+  createdAt: string
+  employee: Pick<Employee, 'id' | 'employeeNumber' | 'firstName' | 'lastName'>
+  approvalRequests: Array<{ id: string; version: number; status: string }>
+}
+
+export interface CompOffEligibleDay {
+  workDate: string
+  workedMinutes: number
+  status: 'HOLIDAY' | 'WEEKEND'
+}
+
 export interface ApprovalRequest {
   id: string
-  type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT' | 'LEAVE' | 'ON_DUTY'
+  type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT' | 'LEAVE' | 'ON_DUTY' | 'COMP_OFF'
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
   requestedBy: string
   assigneeSubject: string | null
@@ -375,6 +400,7 @@ export interface ApprovalRequest {
   exception: AttendanceException | null
   leaveRequest: LeaveRequest | null
   onDutyRequest: OnDutyRequest | null
+  compOffCredit: CompOffCredit | null
   actions: ApprovalAction[]
 }
 
@@ -1014,10 +1040,11 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       request<string[]>('/audit-events/entity-types', { signal }),
     getLeaveTypes: (includeInactive?: boolean, signal?: AbortSignal) =>
       request<LeaveType[]>(`/leave-types${includeInactive ? '?includeInactive=true' : ''}`, { signal }),
-    createLeaveType: (input: { name: string; code: string; paid?: boolean; defaultAnnualDays?: number }) =>
-      request<LeaveType>('/leave-types', { method: 'POST', body: JSON.stringify(input) }),
+    createLeaveType: (input: {
+      name: string; code: string; paid?: boolean; defaultAnnualDays?: number; isCompOff?: boolean
+    }) => request<LeaveType>('/leave-types', { method: 'POST', body: JSON.stringify(input) }),
     updateLeaveType: (id: string, input: {
-      name: string; paid?: boolean; defaultAnnualDays?: number; active?: boolean
+      name: string; paid?: boolean; defaultAnnualDays?: number; active?: boolean; isCompOff?: boolean
     }) => request<LeaveType>(`/leave-types/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
     getLeaveBalances: (input: { employeeId?: string; year?: number } = {}, signal?: AbortSignal) => {
       const query = new URLSearchParams()
@@ -1067,6 +1094,23 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
     submitOnDutyRequest: (input: {
       category: OnDutyCategory; startDate: string; endDate: string; halfDay?: boolean; location?: string; reason: string
     }) => request<OnDutyRequest>('/on-duty-requests', { method: 'POST', body: JSON.stringify(input) }),
+    getCompOffCredits: (
+      input: { employeeId?: string; status?: CompOffCreditStatus; page?: number; pageSize?: number } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ order: 'desc' })
+      if (input.employeeId) query.set('employeeId', input.employeeId)
+      if (input.status) query.set('status', input.status)
+      if (input.page) query.set('page', String(input.page))
+      if (input.pageSize) query.set('pageSize', String(input.pageSize))
+      return request<Page<CompOffCredit>>(`/comp-off-credits?${query}`, { signal })
+    },
+    getCompOffCredit: (id: string, signal?: AbortSignal) =>
+      request<CompOffCredit>(`/comp-off-credits/${id}`, { signal }),
+    getCompOffEligibleDays: (signal?: AbortSignal) =>
+      request<CompOffEligibleDay[]>('/comp-off-credits/eligible-days', { signal }),
+    submitCompOffCredit: (input: { workedDate: string; reason?: string }) =>
+      request<CompOffCredit>('/comp-off-credits', { method: 'POST', body: JSON.stringify(input) }),
   }
 }
 

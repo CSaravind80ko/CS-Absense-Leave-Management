@@ -148,6 +148,7 @@ enum ApprovalType {
   PAYROLL_EXPORT
   LEAVE
   ON_DUTY
+  COMP_OFF
 }
 
 enum ApprovalStatus {
@@ -252,6 +253,7 @@ model Tenant {
   leaveBalances       LeaveBalance[]
   leaveRequests       LeaveRequest[]
   onDutyRequests      OnDutyRequest[]
+  compOffCredits      CompOffCredit[]
 }
 
 model TenantMembership {
@@ -624,6 +626,7 @@ model Employee {
   leaveBalances    LeaveBalance[]
   leaveRequests    LeaveRequest[]
   onDutyRequests   OnDutyRequest[]
+  compOffCredits   CompOffCredit[]
 
   @@unique([tenantId, employeeNumber])
   @@unique([tenantId, cognitoSubject])
@@ -846,6 +849,7 @@ model ApprovalRequest {
   exceptionId     String?              @db.Uuid
   leaveRequestId  String?              @db.Uuid
   onDutyRequestId String?              @db.Uuid
+  compOffCreditId String?              @db.Uuid
   requestedBy     String
   assigneeSubject String?
   assigneeRole    ApplicationRole?
@@ -858,6 +862,7 @@ model ApprovalRequest {
   exception       AttendanceException? @relation(fields: [exceptionId, tenantId], references: [id, tenantId], onDelete: Restrict)
   leaveRequest    LeaveRequest?        @relation(fields: [leaveRequestId, tenantId], references: [id, tenantId], onDelete: Restrict)
   onDutyRequest   OnDutyRequest?       @relation(fields: [onDutyRequestId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  compOffCredit   CompOffCredit?       @relation(fields: [compOffCreditId, tenantId], references: [id, tenantId], onDelete: Restrict)
   actions         ApprovalAction[]
   payrollExports  PayrollExport[]
 
@@ -1119,6 +1124,10 @@ model LeaveType {
   /// Default annual allocation used when granting a new LeaveBalance; null means there is no
   /// standard allocation (e.g. unpaid leave) and balances are set individually.
   defaultAnnualDays Decimal?       @db.Decimal(5, 2)
+  /// Marks the type an approved CompOffCredit deposits days into. Not DB-enforced as unique
+  /// per tenant - ApprovalsService.applyCompOffDecision picks the first active match and
+  /// fails clearly if none exists yet.
+  isCompOff         Boolean        @default(false)
   active            Boolean        @default(true)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
@@ -1225,4 +1234,42 @@ model OnDutyRequest {
   @@index([tenantId, employeeId, status])
   @@index([tenantId, status])
   @@index([tenantId, employeeId, startDate, endDate])
+}
+
+enum CompOffCreditStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Earned, not requested: an employee claims credit for a worked HOLIDAY/WEEKEND day (see
+/// CompOffCreditsService.submit for the eligibility check against AttendanceDay), a manager
+/// approves it through the same ApprovalRequest pipeline as leave/on-duty, and approval
+/// deposits creditDays into the tenant's isCompOff LeaveType balance - redeeming it then
+/// reuses the existing LeaveRequest flow entirely rather than a second spend-side system.
+/// expiresAt is informational for this slice: nothing automatically claws back the balance
+/// when it passes (would need a scheduled job) - a documented follow-up, not this one.
+model CompOffCredit {
+  id               String              @id @default(uuid()) @db.Uuid
+  tenantId         String              @db.Uuid
+  employeeId       String              @db.Uuid
+  workedDate       DateTime            @db.Date
+  workedMinutes    Int
+  creditDays       Decimal             @db.Decimal(5, 2)
+  reason           String?
+  status           CompOffCreditStatus @default(PENDING)
+  expiresAt        DateTime?           @db.Date
+  version          Int                 @default(1)
+  decidedAt        DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee         Employee            @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  approvalRequests ApprovalRequest[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, employeeId, workedDate])
+  @@index([tenantId, employeeId, status])
+  @@index([tenantId, status])
 }
