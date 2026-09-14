@@ -35,6 +35,7 @@ const DEFAULT_ASSIGNEE: Record<ApprovalType, ApplicationRole> = {
   EXCEPTION: 'MANAGER',
   PAYROLL_EXPORT: 'PAYROLL_ADMIN',
   LEAVE: 'MANAGER',
+  ON_DUTY: 'MANAGER',
 };
 
 @Injectable()
@@ -58,7 +59,7 @@ export class ApprovalsService {
               ],
             }
           : {};
-    // LEAVE requests carry neither periodId nor exceptionId - they aren't scoped to a
+    // LEAVE/ON_DUTY requests carry neither periodId nor exceptionId - they aren't scoped to a
     // processing period at all - so a periodId filter must not exclude them, or Team
     // Approvals (which always filters by the currently selected period) would never show one.
     const periodScope: Prisma.ApprovalRequestWhereInput = query.periodId
@@ -67,6 +68,7 @@ export class ApprovalsService {
             { periodId: query.periodId },
             { exception: { attendanceDay: { periodId: query.periodId } } },
             { type: 'LEAVE' },
+            { type: 'ON_DUTY' },
           ],
         }
       : {};
@@ -104,6 +106,13 @@ export class ApprovalsService {
               leaveType: true,
             },
           },
+          onDutyRequest: {
+            include: {
+              employee: {
+                select: { id: true, employeeNumber: true, firstName: true, lastName: true },
+              },
+            },
+          },
           actions: { orderBy: { createdAt: 'asc' } },
         },
         orderBy: { [query.sortBy]: query.order },
@@ -124,6 +133,7 @@ export class ApprovalsService {
           include: { employee: true, attendanceDay: true },
         },
         leaveRequest: { include: { employee: true, leaveType: true } },
+        onDutyRequest: { include: { employee: true } },
         actions: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -262,6 +272,9 @@ export class ApprovalsService {
       if (request.type === 'LEAVE' && request.leaveRequestId && nextStatus) {
         await this.applyLeaveDecision(tx, tenantId, request.leaveRequestId, nextStatus, subject);
       }
+      if (request.type === 'ON_DUTY' && request.onDutyRequestId && nextStatus) {
+        await this.applyOnDutyDecision(tx, tenantId, request.onDutyRequestId, nextStatus, subject);
+      }
       return tx.approvalRequest.findFirstOrThrow({
         where: { id, tenantId },
       });
@@ -312,14 +325,67 @@ export class ApprovalsService {
       });
     }
 
+    await this.enqueueEmployeeRecompute(
+      tx,
+      tenantId,
+      leaveRequest.employeeId,
+      leaveRequest.startDate,
+      leaveRequest.endDate,
+      'LEAVE_APPROVED',
+      actorSubject,
+    );
+  }
+
+  /**
+   * Keeps OnDutyRequest.status in sync with its ApprovalRequest, and - only on APPROVED -
+   * enqueues an attendance recompute for its date range so recomputeDay suppresses
+   * MISSING_PUNCH/ABSENCE and reports ON_DUTY for days with no punch evidence. No balance
+   * involved, unlike leave - on-duty doesn't deplete an allocation.
+   */
+  private async applyOnDutyDecision(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    onDutyRequestId: string,
+    nextStatus: ApprovalStatus,
+    actorSubject: string,
+  ): Promise<void> {
+    const onDutyRequest = await tx.onDutyRequest.findFirstOrThrow({
+      where: { id: onDutyRequestId, tenantId },
+    });
+    await tx.onDutyRequest.update({
+      where: { id: onDutyRequestId },
+      data: { status: nextStatus, decidedAt: new Date() },
+    });
+    if (nextStatus !== 'APPROVED') return;
+
+    await this.enqueueEmployeeRecompute(
+      tx,
+      tenantId,
+      onDutyRequest.employeeId,
+      onDutyRequest.startDate,
+      onDutyRequest.endDate,
+      'ON_DUTY_APPROVED',
+      actorSubject,
+    );
+  }
+
+  private async enqueueEmployeeRecompute(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    employeeId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    reason: string,
+    actorSubject: string,
+  ): Promise<void> {
     const recomputeJob = await tx.policyRecomputeJob.create({
       data: {
         tenantId,
         scopeType: 'EMPLOYEE',
-        scopeId: leaveRequest.employeeId,
-        dateFrom: leaveRequest.startDate,
-        dateTo: leaveRequest.endDate,
-        reason: 'LEAVE_APPROVED',
+        scopeId: employeeId,
+        dateFrom,
+        dateTo,
+        reason,
         requestedBy: actorSubject,
       },
     });
@@ -329,9 +395,9 @@ export class ApprovalsService {
         tenantId,
         recomputeJobId: recomputeJob.id,
         scopeType: 'EMPLOYEE',
-        scopeId: leaveRequest.employeeId,
-        dateFrom: leaveRequest.startDate.toISOString().slice(0, 10),
-        dateTo: leaveRequest.endDate.toISOString().slice(0, 10),
+        scopeId: employeeId,
+        dateFrom: dateFrom.toISOString().slice(0, 10),
+        dateTo: dateTo.toISOString().slice(0, 10),
         requestedBy: actorSubject,
         requestedAt: new Date().toISOString(),
       },
