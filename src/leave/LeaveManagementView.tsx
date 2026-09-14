@@ -4,6 +4,9 @@ import {
   ApiError,
   type ApiClient,
   type ApplicationRole,
+  type CompOffCredit,
+  type CompOffCreditStatus,
+  type CompOffEligibleDay,
   type Employee,
   type LeaveBalance,
   type LeaveRequest,
@@ -44,7 +47,7 @@ function LoadState({ loading, error, empty, retry }: { loading: boolean; error: 
 
 export function LeaveManagementView({ api, role, notify }: { api: ApiClient; role: ApplicationRole; notify: Notify }) {
   const isAdmin = role === 'TENANT_ADMIN' || role === 'HR_ADMIN'
-  const [tab, setTab] = useState<'leave' | 'onDuty' | 'types' | 'balances'>('leave')
+  const [tab, setTab] = useState<'leave' | 'onDuty' | 'compOff' | 'types' | 'balances'>('leave')
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([])
 
   const loadLeaveTypes = useCallback(async () => {
@@ -58,12 +61,14 @@ export function LeaveManagementView({ api, role, notify }: { api: ApiClient; rol
     <div className="tabs">
       <button className={tab === 'leave' ? 'selected' : ''} onClick={() => setTab('leave')}>Leave</button>
       <button className={tab === 'onDuty' ? 'selected' : ''} onClick={() => setTab('onDuty')}>On-Duty</button>
+      <button className={tab === 'compOff' ? 'selected' : ''} onClick={() => setTab('compOff')}>Comp-Off</button>
       {isAdmin && <button className={tab === 'types' ? 'selected' : ''} onClick={() => setTab('types')}>Leave types</button>}
       {isAdmin && <button className={tab === 'balances' ? 'selected' : ''} onClick={() => setTab('balances')}>Balances</button>}
     </div>
 
     {tab === 'leave' && <LeaveRequestsPanel api={api} isAdmin={isAdmin} leaveTypes={leaveTypes} notify={notify}/>}
     {tab === 'onDuty' && <OnDutyRequestsPanel api={api} isAdmin={isAdmin} notify={notify}/>}
+    {tab === 'compOff' && <CompOffPanel api={api} isAdmin={isAdmin} notify={notify}/>}
     {isAdmin && tab === 'types' && <LeaveTypesPanel api={api} onChanged={loadLeaveTypes} notify={notify}/>}
     {isAdmin && tab === 'balances' && <BalancesPanel api={api} leaveTypes={leaveTypes} notify={notify}/>}
   </>
@@ -337,6 +342,118 @@ function OnDutyRequestsPanel({ api, isAdmin, notify }: { api: ApiClient; isAdmin
   </>
 }
 
+const COMP_OFF_STATUS_TONE: Record<CompOffCreditStatus, string> = {
+  PENDING: 'amber',
+  APPROVED: 'green',
+  REJECTED: 'red',
+  CANCELLED: 'neutral',
+}
+
+function CompOffPanel({ api, isAdmin, notify }: { api: ApiClient; isAdmin: boolean; notify: Notify }) {
+  const [credits, setCredits] = useState<CompOffCredit[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [statusFilter, setStatusFilter] = useState<CompOffCreditStatus | ''>('')
+  const [eligibleDays, setEligibleDays] = useState<CompOffEligibleDay[]>()
+  const [claiming, setClaiming] = useState(false)
+  const [selectedDay, setSelectedDay] = useState('')
+  const [reason, setReason] = useState('')
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [selected, setSelected] = useState<CompOffCredit>()
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const result = await api.getCompOffCredits({ status: statusFilter || undefined, pageSize: 100 })
+      setCredits(result.items)
+    } catch (caught) { setError(errorMessage(caught)) } finally { setLoading(false) }
+  }, [api, statusFilter])
+  useEffect(() => { void load() }, [load])
+
+  const openClaim = async () => {
+    setClaiming(true); setFormError(''); setSelectedDay(''); setReason('')
+    try { setEligibleDays(await api.getCompOffEligibleDays()) }
+    catch (caught) { setFormError(errorMessage(caught)) }
+  }
+
+  const submit = async () => {
+    setFormError('')
+    if (!selectedDay) { setFormError('Choose a worked day to claim.'); return }
+    setSaving(true)
+    try {
+      await api.submitCompOffCredit({ workedDate: selectedDay, reason: reason.trim() || undefined })
+      notify('Comp-off claim submitted for approval.')
+      setClaiming(false)
+      await load()
+    } catch (caught) { setFormError(errorMessage(caught)) } finally { setSaving(false) }
+  }
+
+  const cancel = async (credit: CompOffCredit) => {
+    const approval = credit.approvalRequests[0]
+    if (!approval) { notify('No linked approval was found for this claim.', 'warning'); return }
+    try {
+      await api.actOnApproval(approval.id, {
+        action: 'CANCELLED', version: approval.version, comment: 'Cancelled by requester',
+      })
+      notify('Comp-off claim cancelled.')
+      setSelected(undefined)
+      await load()
+    } catch (caught) { notify(errorMessage(caught), 'warning') }
+  }
+
+  const state = <LoadState loading={loading} error={error} empty={credits.length === 0} retry={() => void load()}/>
+
+  return <>
+    <div className="page-top">
+      <p>{isAdmin ? 'All comp-off claims across the organization.' : 'Claim credit for a worked holiday or weekend; approval deposits it into your Comp Off leave balance.'}</p>
+      <button className="primary" onClick={() => void openClaim()}><Plus size={16}/> Claim comp-off</button>
+    </div>
+    <div className="filter-bar">
+      <select aria-label="Status" value={statusFilter} onChange={event => setStatusFilter(event.target.value as CompOffCreditStatus | '')}>
+        <option value="">All statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="APPROVED">Approved</option>
+        <option value="REJECTED">Rejected</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+    </div>
+    {(loading || error || credits.length === 0) ? state : <section className="panel table-panel"><table><thead><tr>
+      {isAdmin && <th>Employee</th>}<th>Worked date</th><th>Worked</th><th>Credit</th><th>Status</th><th>Expires</th>
+    </tr></thead><tbody>
+      {credits.map(credit => <tr key={credit.id} onClick={() => setSelected(credit)}>
+        {isAdmin && <td><b>{credit.employee.firstName} {credit.employee.lastName}</b><small className="subline">{credit.employee.employeeNumber}</small></td>}
+        <td>{formatDate(credit.workedDate)}</td>
+        <td>{Math.floor(credit.workedMinutes / 60)}h {String(credit.workedMinutes % 60).padStart(2, '0')}m</td>
+        <td>{credit.creditDays} day(s)</td>
+        <td><Badge tone={COMP_OFF_STATUS_TONE[credit.status]}>{label(credit.status)}</Badge></td>
+        <td>{credit.expiresAt ? formatDate(credit.expiresAt) : '—'}</td>
+      </tr>)}
+    </tbody></table></section>}
+
+    {selected && <div className="detail-panel">
+      <div className="detail-head"><div><small>COMP-OFF CLAIM</small><h2>{formatDate(selected.workedDate)}</h2><p>{selected.employee.firstName} {selected.employee.lastName}</p></div><button className="icon-button" onClick={() => setSelected(undefined)}><X size={18}/></button></div>
+      <div className="detail-status"><Badge tone={COMP_OFF_STATUS_TONE[selected.status]}>{label(selected.status)}</Badge><span>{selected.creditDays} day(s) · {Math.floor(selected.workedMinutes / 60)}h {String(selected.workedMinutes % 60).padStart(2, '0')}m worked</span></div>
+      {selected.expiresAt && <p><b>Expires:</b> {formatDate(selected.expiresAt)}</p>}
+      {selected.reason && <p>{selected.reason}</p>}
+      {selected.status === 'PENDING' && <button className="secondary full" onClick={() => void cancel(selected)}>Cancel claim</button>}
+    </div>}
+
+    {claiming && <div className="detail-panel">
+      <div className="detail-head"><div><small>CLAIM COMP-OFF</small><h2>New comp-off claim</h2><p>Only worked holidays/weekends with at least an hour logged are eligible.</p></div><button className="icon-button" onClick={() => setClaiming(false)}><X size={18}/></button></div>
+      {formError && <p className="form-error">{formError}</p>}
+      {eligibleDays === undefined ? <LoadState loading empty={false} error="" retry={() => {}}/> : eligibleDays.length === 0 ? <p>No unclaimed worked holidays or weekends were found in the last 90 days.</p> : <>
+        <label>Worked day<select value={selectedDay} onChange={event => setSelectedDay(event.target.value)}>
+          <option value="">Select…</option>
+          {eligibleDays.map(day => <option key={day.workDate} value={day.workDate}>{formatDate(day.workDate)} · {label(day.status)} · {Math.floor(day.workedMinutes / 60)}h {String(day.workedMinutes % 60).padStart(2, '0')}m worked</option>)}
+        </select></label>
+        <label>Reason (optional)<textarea value={reason} onChange={event => setReason(event.target.value)} placeholder="Add context for your manager"/></label>
+        <button className="primary full" disabled={saving} onClick={() => void submit()}>{saving ? <><LoaderCircle className="spinner" size={16}/> Submitting</> : 'Submit claim'}</button>
+      </>}
+    </div>}
+  </>
+}
+
 interface TypeForm {
   mode: 'create' | 'edit'
   type?: LeaveType
@@ -345,6 +462,7 @@ interface TypeForm {
   paid: boolean
   defaultAnnualDays: string
   active: boolean
+  isCompOff: boolean
 }
 
 function LeaveTypesPanel({ api, onChanged, notify }: { api: ApiClient; onChanged: () => Promise<void>; notify: Notify }) {
@@ -361,10 +479,10 @@ function LeaveTypesPanel({ api, onChanged, notify }: { api: ApiClient; onChanged
   }, [api])
   useEffect(() => { void load() }, [load])
 
-  const openCreate = () => setForm({ mode: 'create', name: '', code: '', paid: true, defaultAnnualDays: '', active: true })
+  const openCreate = () => setForm({ mode: 'create', name: '', code: '', paid: true, defaultAnnualDays: '', active: true, isCompOff: false })
   const openEdit = (type: LeaveType) => setForm({
     mode: 'edit', type, name: type.name, code: type.code, paid: type.paid,
-    defaultAnnualDays: type.defaultAnnualDays ?? '', active: type.active,
+    defaultAnnualDays: type.defaultAnnualDays ?? '', active: type.active, isCompOff: type.isCompOff,
   })
 
   const submit = async () => {
@@ -378,6 +496,7 @@ function LeaveTypesPanel({ api, onChanged, notify }: { api: ApiClient; onChanged
         name: form.name.trim(),
         paid: form.paid,
         defaultAnnualDays: form.defaultAnnualDays ? Number(form.defaultAnnualDays) : undefined,
+        isCompOff: form.isCompOff,
       }
       if (form.mode === 'create') {
         await api.createLeaveType({ ...shared, code: form.code.trim() })
@@ -398,7 +517,7 @@ function LeaveTypesPanel({ api, onChanged, notify }: { api: ApiClient; onChanged
     <div className="page-top"><p>Leave types available for requests, with an optional default annual allocation.</p><button className="secondary" onClick={openCreate}><Plus size={16}/> Add leave type</button></div>
     {(loading || error || types.length === 0) ? state : <section className="panel table-panel"><table><thead><tr><th>Name</th><th>Code</th><th>Paid</th><th>Default days/year</th><th>Status</th><th></th></tr></thead><tbody>
       {types.map(type => <tr key={type.id}>
-        <td><b>{type.name}</b></td>
+        <td><b>{type.name}</b>{type.isCompOff && <small className="subline">Comp-off target</small>}</td>
         <td>{type.code}</td>
         <td>{type.paid ? 'Paid' : 'Unpaid'}</td>
         <td>{type.defaultAnnualDays ?? '—'}</td>
@@ -417,6 +536,7 @@ function LeaveTypesPanel({ api, onChanged, notify }: { api: ApiClient; onChanged
       </div>
       <label><input type="checkbox" checked={form.paid} onChange={event => setForm({ ...form, paid: event.target.checked })} style={{ width: 'auto' }}/> Paid (balance is enforced on request)</label>
       {form.mode === 'edit' && <label><input type="checkbox" checked={form.active} onChange={event => setForm({ ...form, active: event.target.checked })} style={{ width: 'auto' }}/> Active (visible for new requests)</label>}
+      <label><input type="checkbox" checked={form.isCompOff} onChange={event => setForm({ ...form, isCompOff: event.target.checked })} style={{ width: 'auto' }}/> Approved comp-off claims deposit into this type</label>
       <button className="primary full" disabled={saving} onClick={() => void submit()}>{saving ? <><LoaderCircle className="spinner" size={16}/> Saving</> : form.mode === 'create' ? 'Add leave type' : 'Save leave type'}</button>
     </div>}
   </>

@@ -31,6 +31,7 @@ export class LeaveTypesService {
             code: dto.code,
             paid: dto.paid ?? true,
             defaultAnnualDays: dto.defaultAnnualDays ?? null,
+            isCompOff: dto.isCompOff ?? false,
           },
         });
         await tx.auditEvent.create({
@@ -69,6 +70,7 @@ export class LeaveTypesService {
           paid: dto.paid ?? existing.paid,
           defaultAnnualDays: dto.defaultAnnualDays ?? null,
           active: dto.active ?? existing.active,
+          isCompOff: dto.isCompOff ?? existing.isCompOff,
         },
       });
       await tx.auditEvent.create({
