@@ -61,6 +61,7 @@ function makeTx() {
     },
     attendancePunch: { findMany: jest.fn().mockResolvedValue([]) },
     holiday: { findMany: jest.fn().mockResolvedValue([]) },
+    leaveRequest: { findFirst: jest.fn().mockResolvedValue(null) },
     attendanceDay: { upsert: jest.fn().mockResolvedValue({ id: 'day-id' }) },
     attendanceException: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };

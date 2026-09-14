@@ -15,6 +15,9 @@ import { EmployeesModule } from './employees/employees.module';
 import { ExceptionsModule } from './exceptions/exceptions.module';
 import { HealthController } from './health/health.controller';
 import { HolidaysModule } from './holidays/holidays.module';
+import { LeaveBalancesModule } from './leave-balances/leave-balances.module';
+import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
+import { LeaveTypesModule } from './leave-types/leave-types.module';
 import { OrgModule } from './org/org.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { PoliciesModule } from './policies/policies.module';
@@ -41,6 +44,9 @@ import { ScimModule } from './scim/scim.module';
     HolidaysModule,
     RecomputeJobsModule,
     ShiftsModule,
+    LeaveTypesModule,
+    LeaveBalancesModule,
+    LeaveRequestsModule,
     MeModule,
     TenantUsersModule,
     SamlConnectionsModule,
