@@ -143,6 +143,7 @@ enum ApprovalType {
   ATTENDANCE_PERIOD
   EXCEPTION
   PAYROLL_EXPORT
+  LEAVE
 }
 
 enum ApprovalStatus {
@@ -243,6 +244,9 @@ model Tenant {
   employeeGroups      EmployeeGroup[]
   holidays            Holiday[]
   policyRecomputeJobs PolicyRecomputeJob[]
+  leaveTypes          LeaveType[]
+  leaveBalances       LeaveBalance[]
+  leaveRequests       LeaveRequest[]
 }
 
 model TenantMembership {
@@ -612,6 +616,8 @@ model Employee {
   exceptions       AttendanceException[]
   payrollItems     PayrollExportItem[]
   groupMemberships EmployeeGroupMember[]
+  leaveBalances    LeaveBalance[]
+  leaveRequests    LeaveRequest[]
 
   @@unique([tenantId, employeeNumber])
   @@unique([tenantId, cognitoSubject])
@@ -832,6 +838,7 @@ model ApprovalRequest {
   status          ApprovalStatus       @default(PENDING)
   periodId        String?              @db.Uuid
   exceptionId     String?              @db.Uuid
+  leaveRequestId  String?              @db.Uuid
   requestedBy     String
   assigneeSubject String?
   assigneeRole    ApplicationRole?
@@ -842,6 +849,7 @@ model ApprovalRequest {
   tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   period          ProcessingPeriod?    @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
   exception       AttendanceException? @relation(fields: [exceptionId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  leaveRequest    LeaveRequest?        @relation(fields: [leaveRequestId, tenantId], references: [id, tenantId], onDelete: Restrict)
   actions         ApprovalAction[]
   payrollExports  PayrollExport[]
 
@@ -1085,4 +1093,82 @@ model PolicyRecomputeJob {
   @@unique([id, tenantId])
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveType {
+  id                String         @id @default(uuid()) @db.Uuid
+  tenantId          String         @db.Uuid
+  name              String
+  code              String
+  paid              Boolean        @default(true)
+  /// Default annual allocation used when granting a new LeaveBalance; null means there is no
+  /// standard allocation (e.g. unpaid leave) and balances are set individually.
+  defaultAnnualDays Decimal?       @db.Decimal(5, 2)
+  active            Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  tenant            Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  balances          LeaveBalance[]
+  requests          LeaveRequest[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, code])
+  @@index([tenantId, active])
+}
+
+/// One employee's allocation for one leave type in one calendar year. usedDays is only
+/// incremented when a LeaveRequest is approved, not on submission.
+model LeaveBalance {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @db.Uuid
+  employeeId    String    @db.Uuid
+  leaveTypeId   String    @db.Uuid
+  year          Int
+  allocatedDays Decimal   @db.Decimal(5, 2)
+  usedDays      Decimal   @default(0) @db.Decimal(5, 2)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee      Employee  @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  leaveType     LeaveType @relation(fields: [leaveTypeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, employeeId, leaveTypeId, year])
+  @@index([tenantId, employeeId, year])
+}
+
+/// Mirrors AttendanceException: owns its own status rather than deferring entirely to the
+/// linked ApprovalRequest, so it reads/queries independently of the approval pipeline. The
+/// two are kept in sync transactionally by ApprovalsService.act when type is LEAVE.
+model LeaveRequest {
+  id               String              @id @default(uuid()) @db.Uuid
+  tenantId         String              @db.Uuid
+  employeeId       String              @db.Uuid
+  leaveTypeId      String              @db.Uuid
+  startDate        DateTime            @db.Date
+  endDate          DateTime            @db.Date
+  /// Only meaningful when startDate == endDate.
+  halfDay          Boolean             @default(false)
+  totalDays        Decimal             @db.Decimal(5, 2)
+  reason           String?
+  status           LeaveRequestStatus  @default(PENDING)
+  version          Int                 @default(1)
+  decidedAt        DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee         Employee            @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  leaveType        LeaveType           @relation(fields: [leaveTypeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  approvalRequests ApprovalRequest[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, employeeId, status])
+  @@index([tenantId, status])
+  @@index([tenantId, employeeId, startDate, endDate])
 }

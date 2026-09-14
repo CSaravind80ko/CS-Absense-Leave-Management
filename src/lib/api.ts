@@ -301,9 +301,49 @@ export interface ApprovalAction {
   createdAt: string
 }
 
+export interface LeaveType {
+  id: string
+  name: string
+  code: string
+  paid: boolean
+  // Decimal fields serialize as strings.
+  defaultAnnualDays: string | null
+  active: boolean
+}
+
+export interface LeaveBalance {
+  id: string
+  employeeId: string
+  leaveTypeId: string
+  year: number
+  allocatedDays: string
+  usedDays: string
+  leaveType: LeaveType
+}
+
+export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+
+export interface LeaveRequest {
+  id: string
+  employeeId: string
+  leaveTypeId: string
+  startDate: string
+  endDate: string
+  halfDay: boolean
+  totalDays: string
+  reason: string | null
+  status: LeaveRequestStatus
+  version: number
+  decidedAt: string | null
+  createdAt: string
+  employee: Pick<Employee, 'id' | 'employeeNumber' | 'firstName' | 'lastName'>
+  leaveType: LeaveType
+  approvalRequests: Array<{ id: string; version: number; status: string }>
+}
+
 export interface ApprovalRequest {
   id: string
-  type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT'
+  type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT' | 'LEAVE'
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
   requestedBy: string
   assigneeSubject: string | null
@@ -312,6 +352,7 @@ export interface ApprovalRequest {
   createdAt: string
   period: Pick<ProcessingPeriod, 'id' | 'name' | 'startsOn' | 'endsOn'> | null
   exception: AttendanceException | null
+  leaveRequest: LeaveRequest | null
   actions: ApprovalAction[]
 }
 
@@ -452,9 +493,10 @@ export interface CalculationTrace {
   scopeType: PolicyScopeType
   scopeId: string
   effectiveFrom: string
-  dayType: 'WORKING' | 'HOLIDAY' | 'WEEKEND'
+  dayType: 'WORKING' | 'HOLIDAY' | 'WEEKEND' | 'LEAVE'
   workingWeekdays: number[]
   holiday: { id: string; name: string } | null
+  leave: { id: string; leaveTypeName: string; halfDay: boolean } | null
   rules: PolicyRules
   computed: {
     scheduledMinutes: number
@@ -948,6 +990,45 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
     },
     getAuditEventEntityTypes: (signal?: AbortSignal) =>
       request<string[]>('/audit-events/entity-types', { signal }),
+    getLeaveTypes: (includeInactive?: boolean, signal?: AbortSignal) =>
+      request<LeaveType[]>(`/leave-types${includeInactive ? '?includeInactive=true' : ''}`, { signal }),
+    createLeaveType: (input: { name: string; code: string; paid?: boolean; defaultAnnualDays?: number }) =>
+      request<LeaveType>('/leave-types', { method: 'POST', body: JSON.stringify(input) }),
+    updateLeaveType: (id: string, input: {
+      name: string; paid?: boolean; defaultAnnualDays?: number; active?: boolean
+    }) => request<LeaveType>(`/leave-types/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+    getLeaveBalances: (input: { employeeId?: string; year?: number } = {}, signal?: AbortSignal) => {
+      const query = new URLSearchParams()
+      if (input.employeeId) query.set('employeeId', input.employeeId)
+      if (input.year) query.set('year', String(input.year))
+      const suffix = query.toString() ? `?${query}` : ''
+      return request<LeaveBalance[]>(`/leave-balances${suffix}`, { signal })
+    },
+    setLeaveBalance: (input: { employeeId: string; leaveTypeId: string; year: number; allocatedDays: number }) =>
+      request<LeaveBalance>('/leave-balances', { method: 'POST', body: JSON.stringify(input) }),
+    getLeaveRequests: (
+      input: {
+        employeeId?: string
+        status?: LeaveRequestStatus
+        leaveTypeId?: string
+        page?: number
+        pageSize?: number
+      } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams({ order: 'desc' })
+      if (input.employeeId) query.set('employeeId', input.employeeId)
+      if (input.status) query.set('status', input.status)
+      if (input.leaveTypeId) query.set('leaveTypeId', input.leaveTypeId)
+      if (input.page) query.set('page', String(input.page))
+      if (input.pageSize) query.set('pageSize', String(input.pageSize))
+      return request<Page<LeaveRequest>>(`/leave-requests?${query}`, { signal })
+    },
+    getLeaveRequest: (id: string, signal?: AbortSignal) =>
+      request<LeaveRequest>(`/leave-requests/${id}`, { signal }),
+    submitLeaveRequest: (input: {
+      leaveTypeId: string; startDate: string; endDate: string; halfDay?: boolean; reason?: string
+    }) => request<LeaveRequest>('/leave-requests', { method: 'POST', body: JSON.stringify(input) }),
   }
 }
 

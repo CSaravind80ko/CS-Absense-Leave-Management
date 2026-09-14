@@ -1152,13 +1152,23 @@ export async function recomputeDay(
     candidateHolidays.find((row) => row.locationId === null) ??
     null;
 
+  // halfDay leave is treated the same as a full-day leave for this slice - splitting the
+  // schedule into worked/leave halves is a follow-up, not this one (same deferral the
+  // codebase already makes for comp-off).
+  const approvedLeave = await tx.leaveRequest.findFirst({
+    where: { tenantId, employeeId, status: 'APPROVED', startDate: { lte: workDate }, endDate: { gte: workDate } },
+    include: { leaveType: true },
+  });
+
   const weekday = DateTime.fromISO(workDateText, { zone: timezone }).weekday;
   const isWorkingWeekday = policyVersion.workingWeekdays.includes(weekday);
-  const dayType: 'HOLIDAY' | 'WEEKEND' | 'WORKING' = holiday
+  const dayType: 'HOLIDAY' | 'WEEKEND' | 'LEAVE' | 'WORKING' = holiday
     ? 'HOLIDAY'
     : !isWorkingWeekday
       ? 'WEEKEND'
-      : 'WORKING';
+      : approvedLeave
+        ? 'LEAVE'
+        : 'WORKING';
 
   const shiftSpanMinutes = employee.shift
     ? (employee.shift.endMinutes - employee.shift.startMinutes + 1440) % 1440
@@ -1169,7 +1179,7 @@ export async function recomputeDay(
   let overtimeMinutes = 0;
   let lateMinutes = 0;
   let earlyDepartureMinutes = 0;
-  let status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'HOLIDAY' | 'WEEKEND';
+  let status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'HOLIDAY' | 'WEEKEND' | 'LEAVE';
 
   if (dayType === 'WORKING') {
     scheduledMinutes = Math.max(0, shiftMinutes);
@@ -1223,8 +1233,8 @@ export async function recomputeDay(
         ? Math.min(roundedOvertime, rules.overtime.dailyCapMinutes)
         : roundedOvertime;
   } else {
-    // HOLIDAY/WEEKEND: no schedule is expected, and any worked time is treated as overtime
-    // for this slice (comp-off handling is a later roadmap item, not this one).
+    // HOLIDAY/WEEKEND/LEAVE: no schedule is expected, and any worked time is treated as
+    // overtime for this slice (comp-off handling is a later roadmap item, not this one).
     scheduledMinutes = 0;
     overtimeMinutes = workedMinutes;
     status = dayType;
@@ -1251,6 +1261,9 @@ export async function recomputeDay(
     dayType,
     workingWeekdays: policyVersion.workingWeekdays,
     holiday: holiday ? { id: holiday.id, name: holiday.name } : null,
+    leave: approvedLeave
+      ? { id: approvedLeave.id, leaveTypeName: approvedLeave.leaveType.name, halfDay: approvedLeave.halfDay }
+      : null,
     rules,
     computed: {
       scheduledMinutes,
