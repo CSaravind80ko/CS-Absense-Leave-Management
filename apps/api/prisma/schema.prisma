@@ -103,6 +103,9 @@ enum AttendanceStatus {
   LEAVE
   HOLIDAY
   WEEKEND
+  /// A working day with an approved on-duty request covering it and zero punches - unlike
+  /// LEAVE, the day stays scheduled (off-site work, not time off); see recomputeDay.
+  ON_DUTY
 }
 
 enum ExceptionType {
@@ -144,6 +147,7 @@ enum ApprovalType {
   EXCEPTION
   PAYROLL_EXPORT
   LEAVE
+  ON_DUTY
 }
 
 enum ApprovalStatus {
@@ -247,6 +251,7 @@ model Tenant {
   leaveTypes          LeaveType[]
   leaveBalances       LeaveBalance[]
   leaveRequests       LeaveRequest[]
+  onDutyRequests      OnDutyRequest[]
 }
 
 model TenantMembership {
@@ -618,6 +623,7 @@ model Employee {
   groupMemberships EmployeeGroupMember[]
   leaveBalances    LeaveBalance[]
   leaveRequests    LeaveRequest[]
+  onDutyRequests   OnDutyRequest[]
 
   @@unique([tenantId, employeeNumber])
   @@unique([tenantId, cognitoSubject])
@@ -839,6 +845,7 @@ model ApprovalRequest {
   periodId        String?              @db.Uuid
   exceptionId     String?              @db.Uuid
   leaveRequestId  String?              @db.Uuid
+  onDutyRequestId String?              @db.Uuid
   requestedBy     String
   assigneeSubject String?
   assigneeRole    ApplicationRole?
@@ -850,6 +857,7 @@ model ApprovalRequest {
   period          ProcessingPeriod?    @relation(fields: [periodId, tenantId], references: [id, tenantId], onDelete: Restrict)
   exception       AttendanceException? @relation(fields: [exceptionId, tenantId], references: [id, tenantId], onDelete: Restrict)
   leaveRequest    LeaveRequest?        @relation(fields: [leaveRequestId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  onDutyRequest   OnDutyRequest?       @relation(fields: [onDutyRequestId, tenantId], references: [id, tenantId], onDelete: Restrict)
   actions         ApprovalAction[]
   payrollExports  PayrollExport[]
 
@@ -1165,6 +1173,52 @@ model LeaveRequest {
   tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   employee         Employee            @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
   leaveType        LeaveType           @relation(fields: [leaveTypeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  approvalRequests ApprovalRequest[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, employeeId, status])
+  @@index([tenantId, status])
+  @@index([tenantId, employeeId, startDate, endDate])
+}
+
+enum OnDutyRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum OnDutyCategory {
+  CLIENT_VISIT
+  GOVERNMENT_OFFICE
+  TRAINING
+  CONFERENCE
+  OTHER
+}
+
+/// No balance concept, unlike LeaveRequest - on-duty doesn't deplete an allocation, it
+/// justifies a working day spent off-site. recomputeDay keeps normal WORKING-day scheduling
+/// for the date but suppresses MISSING_PUNCH/ABSENCE and reports ON_DUTY instead of ABSENT
+/// when there's zero punch evidence.
+model OnDutyRequest {
+  id               String              @id @default(uuid()) @db.Uuid
+  tenantId         String              @db.Uuid
+  employeeId       String              @db.Uuid
+  category         OnDutyCategory
+  startDate        DateTime            @db.Date
+  endDate          DateTime            @db.Date
+  /// Only meaningful when startDate == endDate.
+  halfDay          Boolean             @default(false)
+  totalDays        Decimal             @db.Decimal(5, 2)
+  location         String?
+  reason           String
+  status           OnDutyRequestStatus @default(PENDING)
+  version          Int                 @default(1)
+  decidedAt        DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee         Employee            @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
   approvalRequests ApprovalRequest[]
 
   @@unique([id, tenantId])

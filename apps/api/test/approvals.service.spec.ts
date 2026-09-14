@@ -4,7 +4,23 @@ import { PrismaService } from '../src/prisma/prisma.service';
 const tenantId = 'de305d54-75b4-431b-adb2-eb6b9e546014';
 const approvalId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
 const leaveRequestId = '8d11d74a-e6b1-4a4c-9104-59538a65f28d';
+const onDutyRequestId = '81d4fae4-6c11-4bb5-9170-eea7fe9d9dd0';
 const employeeId = '11111111-1111-4111-8111-111111111111';
+
+function pendingOnDutyApproval(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: approvalId,
+    tenantId,
+    type: 'ON_DUTY',
+    status: 'PENDING',
+    version: 1,
+    onDutyRequestId,
+    requestedBy: 'employee-subject',
+    assigneeSubject: null,
+    assigneeRole: 'MANAGER',
+    ...overrides,
+  };
+}
 
 function pendingLeaveApproval(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -212,5 +228,94 @@ describe('ApprovalsService.act — LEAVE integration', () => {
     });
 
     expect(tx.leaveRequest.findFirstOrThrow).not.toHaveBeenCalled();
+  });
+});
+
+describe('ApprovalsService.act — ON_DUTY integration', () => {
+  it('approving updates OnDutyRequest.status and enqueues a recompute (no balance involved)', async () => {
+    const onDutyRequest = {
+      id: onDutyRequestId,
+      tenantId,
+      employeeId,
+      startDate: new Date('2026-09-20'),
+      endDate: new Date('2026-09-20'),
+    };
+    const onDutyUpdate = jest.fn().mockResolvedValue({});
+    const recomputeJobCreate = jest.fn().mockResolvedValue({ id: 'recompute-job-id' });
+    const tx = {
+      approvalRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirstOrThrow: jest.fn().mockResolvedValue({ id: approvalId, status: 'APPROVED' }),
+      },
+      approvalAction: { create: jest.fn().mockResolvedValue({}) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      onDutyRequest: {
+        findFirstOrThrow: jest.fn().mockResolvedValue(onDutyRequest),
+        update: onDutyUpdate,
+      },
+      policyRecomputeJob: { create: recomputeJobCreate },
+      outboxEvent: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      approvalRequest: { findFirst: jest.fn().mockResolvedValue(pendingOnDutyApproval()) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ApprovalsService(prisma);
+
+    await service.act(tenantId, approvalId, 'manager-subject', 'MANAGER', {
+      action: 'APPROVED',
+      version: 1,
+    });
+
+    expect(onDutyUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }),
+    );
+    expect(recomputeJobCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tenantId,
+          scopeType: 'EMPLOYEE',
+          scopeId: employeeId,
+          reason: 'ON_DUTY_APPROVED',
+        }),
+      }),
+    );
+  });
+
+  it('rejecting updates OnDutyRequest.status without enqueueing a recompute', async () => {
+    const onDutyUpdate = jest.fn().mockResolvedValue({});
+    const recomputeJobCreate = jest.fn();
+    const tx = {
+      approvalRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirstOrThrow: jest.fn().mockResolvedValue({ id: approvalId, status: 'REJECTED' }),
+      },
+      approvalAction: { create: jest.fn().mockResolvedValue({}) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      onDutyRequest: {
+        findFirstOrThrow: jest.fn().mockResolvedValue({
+          id: onDutyRequestId, tenantId, employeeId,
+          startDate: new Date('2026-09-20'), endDate: new Date('2026-09-20'),
+        }),
+        update: onDutyUpdate,
+      },
+      policyRecomputeJob: { create: recomputeJobCreate },
+    };
+    const prisma = {
+      approvalRequest: { findFirst: jest.fn().mockResolvedValue(pendingOnDutyApproval()) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ApprovalsService(prisma);
+
+    await service.act(tenantId, approvalId, 'manager-subject', 'MANAGER', {
+      action: 'REJECTED',
+      version: 1,
+      comment: 'Not required, remote access is sufficient',
+    });
+
+    expect(onDutyUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }),
+    );
+    expect(recomputeJobCreate).not.toHaveBeenCalled();
   });
 });
