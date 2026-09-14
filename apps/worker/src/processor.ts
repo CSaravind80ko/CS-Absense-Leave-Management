@@ -1160,6 +1160,14 @@ export async function recomputeDay(
     include: { leaveType: true },
   });
 
+  // Unlike leave, on-duty does NOT change dayType - the employee is expected to be working,
+  // just off-site, so normal WORKING-day scheduling still applies. It only relaxes the
+  // MISSING_PUNCH/ABSENCE triggers below, since an off-site day legitimately may have no
+  // biometric evidence.
+  const approvedOnDuty = await tx.onDutyRequest.findFirst({
+    where: { tenantId, employeeId, status: 'APPROVED', startDate: { lte: workDate }, endDate: { gte: workDate } },
+  });
+
   const weekday = DateTime.fromISO(workDateText, { zone: timezone }).weekday;
   const isWorkingWeekday = policyVersion.workingWeekdays.includes(weekday);
   const dayType: 'HOLIDAY' | 'WEEKEND' | 'LEAVE' | 'WORKING' = holiday
@@ -1179,13 +1187,13 @@ export async function recomputeDay(
   let overtimeMinutes = 0;
   let lateMinutes = 0;
   let earlyDepartureMinutes = 0;
-  let status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'HOLIDAY' | 'WEEKEND' | 'LEAVE';
+  let status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'HOLIDAY' | 'WEEKEND' | 'LEAVE' | 'ON_DUTY';
 
   if (dayType === 'WORKING') {
     scheduledMinutes = Math.max(0, shiftMinutes);
     status =
       workedMinutes === 0
-        ? 'ABSENT'
+        ? (approvedOnDuty ? 'ON_DUTY' : 'ABSENT')
         : scheduledMinutes && workedMinutes < scheduledMinutes
           ? 'PARTIAL'
           : 'PRESENT';
@@ -1241,10 +1249,13 @@ export async function recomputeDay(
   }
 
   const isFullAbsence = dayType === 'WORKING' && status === 'ABSENT';
+  // An approved on-duty day isn't second-guessed on logged hours either, even when some
+  // punches exist but fall short of the half-day threshold.
   const isPartialUnderHalfDay =
     dayType === 'WORKING' &&
     status === 'PARTIAL' &&
-    workedMinutes < rules.halfDay.halfDayThresholdMinutes;
+    workedMinutes < rules.halfDay.halfDayThresholdMinutes &&
+    !approvedOnDuty;
 
   const sourceSummary = Object.fromEntries(
     Array.from(new Set(punches.map((punch) => punch.source))).map((source) => [
@@ -1263,6 +1274,9 @@ export async function recomputeDay(
     holiday: holiday ? { id: holiday.id, name: holiday.name } : null,
     leave: approvedLeave
       ? { id: approvedLeave.id, leaveTypeName: approvedLeave.leaveType.name, halfDay: approvedLeave.halfDay }
+      : null,
+    onDuty: approvedOnDuty
+      ? { id: approvedOnDuty.id, category: approvedOnDuty.category, halfDay: approvedOnDuty.halfDay }
       : null,
     rules,
     computed: {
@@ -1301,7 +1315,7 @@ export async function recomputeDay(
       },
       {
         rule: 'MISSING_PUNCH',
-        triggered: dayType === 'WORKING' && missingPunch,
+        triggered: dayType === 'WORKING' && missingPunch && !approvedOnDuty,
       },
     ],
     computedAt: new Date().toISOString(),
@@ -1347,7 +1361,7 @@ export async function recomputeDay(
     },
   });
   const exceptions: Prisma.AttendanceExceptionCreateManyInput[] = [];
-  if (missingPunch && dayType === 'WORKING') {
+  if (missingPunch && dayType === 'WORKING' && !approvedOnDuty) {
     exceptions.push({
       tenantId,
       employeeId,

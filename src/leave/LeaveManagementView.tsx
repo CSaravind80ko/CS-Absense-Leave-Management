@@ -9,6 +9,9 @@ import {
   type LeaveRequest,
   type LeaveRequestStatus,
   type LeaveType,
+  type OnDutyCategory,
+  type OnDutyRequest,
+  type OnDutyRequestStatus,
 } from '../lib/api'
 
 type Notify = (message: string, kind?: 'success' | 'warning') => void
@@ -26,6 +29,8 @@ const STATUS_TONE: Record<LeaveRequestStatus, string> = {
   CANCELLED: 'neutral',
 }
 
+const ON_DUTY_CATEGORIES: OnDutyCategory[] = ['CLIENT_VISIT', 'GOVERNMENT_OFFICE', 'TRAINING', 'CONFERENCE', 'OTHER']
+
 function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
   return <span className={`badge ${tone}`}>{children}</span>
 }
@@ -39,7 +44,7 @@ function LoadState({ loading, error, empty, retry }: { loading: boolean; error: 
 
 export function LeaveManagementView({ api, role, notify }: { api: ApiClient; role: ApplicationRole; notify: Notify }) {
   const isAdmin = role === 'TENANT_ADMIN' || role === 'HR_ADMIN'
-  const [tab, setTab] = useState<'requests' | 'types' | 'balances'>('requests')
+  const [tab, setTab] = useState<'leave' | 'onDuty' | 'types' | 'balances'>('leave')
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([])
 
   const loadLeaveTypes = useCallback(async () => {
@@ -50,13 +55,15 @@ export function LeaveManagementView({ api, role, notify }: { api: ApiClient; rol
   useEffect(() => { void loadLeaveTypes() }, [loadLeaveTypes])
 
   return <>
-    {isAdmin && <div className="tabs">
-      <button className={tab === 'requests' ? 'selected' : ''} onClick={() => setTab('requests')}>Requests</button>
-      <button className={tab === 'types' ? 'selected' : ''} onClick={() => setTab('types')}>Leave types</button>
-      <button className={tab === 'balances' ? 'selected' : ''} onClick={() => setTab('balances')}>Balances</button>
-    </div>}
+    <div className="tabs">
+      <button className={tab === 'leave' ? 'selected' : ''} onClick={() => setTab('leave')}>Leave</button>
+      <button className={tab === 'onDuty' ? 'selected' : ''} onClick={() => setTab('onDuty')}>On-Duty</button>
+      {isAdmin && <button className={tab === 'types' ? 'selected' : ''} onClick={() => setTab('types')}>Leave types</button>}
+      {isAdmin && <button className={tab === 'balances' ? 'selected' : ''} onClick={() => setTab('balances')}>Balances</button>}
+    </div>
 
-    {(!isAdmin || tab === 'requests') && <RequestsPanel api={api} isAdmin={isAdmin} leaveTypes={leaveTypes} notify={notify}/>}
+    {tab === 'leave' && <LeaveRequestsPanel api={api} isAdmin={isAdmin} leaveTypes={leaveTypes} notify={notify}/>}
+    {tab === 'onDuty' && <OnDutyRequestsPanel api={api} isAdmin={isAdmin} notify={notify}/>}
     {isAdmin && tab === 'types' && <LeaveTypesPanel api={api} onChanged={loadLeaveTypes} notify={notify}/>}
     {isAdmin && tab === 'balances' && <BalancesPanel api={api} leaveTypes={leaveTypes} notify={notify}/>}
   </>
@@ -70,7 +77,7 @@ interface SubmitForm {
   reason: string
 }
 
-function RequestsPanel({ api, isAdmin, leaveTypes, notify }: {
+function LeaveRequestsPanel({ api, isAdmin, leaveTypes, notify }: {
   api: ApiClient; isAdmin: boolean; leaveTypes: LeaveType[]; notify: Notify
 }) {
   const [requests, setRequests] = useState<LeaveRequest[]>([])
@@ -191,6 +198,137 @@ function RequestsPanel({ api, isAdmin, leaveTypes, notify }: {
       <div className="form-grid">
         <label>Start date<input type="date" value={form.startDate} onChange={event => setForm({ ...form, startDate: event.target.value })}/></label>
         <label>End date<input type="date" value={form.endDate} onChange={event => setForm({ ...form, endDate: event.target.value })}/></label>
+      </div>
+      <label><input type="checkbox" checked={form.halfDay} onChange={event => setForm({ ...form, halfDay: event.target.checked })} style={{ width: 'auto' }}/> Half day (start date only)</label>
+      <label>Reason<textarea value={form.reason} onChange={event => setForm({ ...form, reason: event.target.value })} placeholder="Add context for your manager"/></label>
+      <button className="primary full" disabled={saving} onClick={() => void submit()}>{saving ? <><LoaderCircle className="spinner" size={16}/> Submitting</> : 'Submit request'}</button>
+    </div>}
+  </>
+}
+
+const ON_DUTY_STATUS_TONE: Record<OnDutyRequestStatus, string> = {
+  PENDING: 'amber',
+  APPROVED: 'green',
+  REJECTED: 'red',
+  CANCELLED: 'neutral',
+}
+
+interface OnDutySubmitForm {
+  category: OnDutyCategory
+  startDate: string
+  endDate: string
+  halfDay: boolean
+  location: string
+  reason: string
+}
+
+function OnDutyRequestsPanel({ api, isAdmin, notify }: { api: ApiClient; isAdmin: boolean; notify: Notify }) {
+  const [requests, setRequests] = useState<OnDutyRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [statusFilter, setStatusFilter] = useState<OnDutyRequestStatus | ''>('')
+  const [form, setForm] = useState<OnDutySubmitForm>()
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [selected, setSelected] = useState<OnDutyRequest>()
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const result = await api.getOnDutyRequests({ status: statusFilter || undefined, pageSize: 100 })
+      setRequests(result.items)
+    } catch (caught) { setError(errorMessage(caught)) } finally { setLoading(false) }
+  }, [api, statusFilter])
+  useEffect(() => { void load() }, [load])
+
+  const openSubmit = () => setForm({
+    category: 'CLIENT_VISIT',
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
+    halfDay: false,
+    location: '',
+    reason: '',
+  })
+
+  const submit = async () => {
+    if (!form) return
+    setFormError('')
+    if (!form.reason.trim()) { setFormError('Enter a reason.'); return }
+    setSaving(true)
+    try {
+      await api.submitOnDutyRequest({
+        category: form.category,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        halfDay: form.halfDay,
+        location: form.location.trim() || undefined,
+        reason: form.reason.trim(),
+      })
+      notify('On-duty request submitted for approval.')
+      setForm(undefined)
+      await load()
+    } catch (caught) { setFormError(errorMessage(caught)) } finally { setSaving(false) }
+  }
+
+  const cancel = async (request: OnDutyRequest) => {
+    const approval = request.approvalRequests[0]
+    if (!approval) { notify('No linked approval was found for this request.', 'warning'); return }
+    try {
+      await api.actOnApproval(approval.id, {
+        action: 'CANCELLED', version: approval.version, comment: 'Cancelled by requester',
+      })
+      notify('On-duty request cancelled.')
+      setSelected(undefined)
+      await load()
+    } catch (caught) { notify(errorMessage(caught), 'warning') }
+  }
+
+  const state = <LoadState loading={loading} error={error} empty={requests.length === 0} retry={() => void load()}/>
+
+  return <>
+    <div className="page-top">
+      <p>{isAdmin ? 'All on-duty requests across the organization.' : 'Your on-duty requests. Approval routes to your reporting manager.'}</p>
+      <button className="primary" onClick={openSubmit}><Plus size={16}/> Raise on-duty request</button>
+    </div>
+    <div className="filter-bar">
+      <select aria-label="Status" value={statusFilter} onChange={event => setStatusFilter(event.target.value as OnDutyRequestStatus | '')}>
+        <option value="">All statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="APPROVED">Approved</option>
+        <option value="REJECTED">Rejected</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+    </div>
+    {(loading || error || requests.length === 0) ? state : <section className="panel table-panel"><table><thead><tr>
+      {isAdmin && <th>Employee</th>}<th>Category</th><th>Dates</th><th>Days</th><th>Status</th>
+    </tr></thead><tbody>
+      {requests.map(request => <tr key={request.id} onClick={() => setSelected(request)}>
+        {isAdmin && <td><b>{request.employee.firstName} {request.employee.lastName}</b><small className="subline">{request.employee.employeeNumber}</small></td>}
+        <td>{label(request.category)}</td>
+        <td>{formatDate(request.startDate)}{request.startDate !== request.endDate ? ` – ${formatDate(request.endDate)}` : ''}{request.halfDay ? ' (half day)' : ''}</td>
+        <td>{request.totalDays}</td>
+        <td><Badge tone={ON_DUTY_STATUS_TONE[request.status]}>{label(request.status)}</Badge></td>
+      </tr>)}
+    </tbody></table></section>}
+
+    {selected && <div className="detail-panel">
+      <div className="detail-head"><div><small>ON-DUTY REQUEST</small><h2>{label(selected.category)}</h2><p>{selected.employee.firstName} {selected.employee.lastName} · {formatDate(selected.startDate)}{selected.startDate !== selected.endDate ? ` – ${formatDate(selected.endDate)}` : ''}</p></div><button className="icon-button" onClick={() => setSelected(undefined)}><X size={18}/></button></div>
+      <div className="detail-status"><Badge tone={ON_DUTY_STATUS_TONE[selected.status]}>{label(selected.status)}</Badge><span>{selected.totalDays} day(s){selected.halfDay ? ' · half day' : ''}</span></div>
+      {selected.location && <p><b>Location:</b> {selected.location}</p>}
+      <p>{selected.reason}</p>
+      {selected.status === 'PENDING' && <button className="secondary full" onClick={() => void cancel(selected)}>Cancel request</button>}
+    </div>}
+
+    {form && <div className="detail-panel">
+      <div className="detail-head"><div><small>RAISE ON-DUTY REQUEST</small><h2>New on-duty request</h2><p>Routes to your reporting manager for approval.</p></div><button className="icon-button" onClick={() => setForm(undefined)}><X size={18}/></button></div>
+      {formError && <p className="form-error">{formError}</p>}
+      <label>Category<select value={form.category} onChange={event => setForm({ ...form, category: event.target.value as OnDutyCategory })}>
+        {ON_DUTY_CATEGORIES.map(category => <option key={category} value={category}>{label(category)}</option>)}
+      </select></label>
+      <div className="form-grid">
+        <label>Start date<input type="date" value={form.startDate} onChange={event => setForm({ ...form, startDate: event.target.value })}/></label>
+        <label>End date<input type="date" value={form.endDate} onChange={event => setForm({ ...form, endDate: event.target.value })}/></label>
+        <label>Location (optional)<input value={form.location} onChange={event => setForm({ ...form, location: event.target.value })} placeholder="e.g. Client office, Bengaluru"/></label>
       </div>
       <label><input type="checkbox" checked={form.halfDay} onChange={event => setForm({ ...form, halfDay: event.target.checked })} style={{ width: 'auto' }}/> Half day (start date only)</label>
       <label>Reason<textarea value={form.reason} onChange={event => setForm({ ...form, reason: event.target.value })} placeholder="Add context for your manager"/></label>

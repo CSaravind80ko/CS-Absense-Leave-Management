@@ -18,6 +18,7 @@ import { HolidaysModule } from './holidays/holidays.module';
 import { LeaveBalancesModule } from './leave-balances/leave-balances.module';
 import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
 import { LeaveTypesModule } from './leave-types/leave-types.module';
+import { OnDutyRequestsModule } from './on-duty-requests/on-duty-requests.module';
 import { OrgModule } from './org/org.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { PoliciesModule } from './policies/policies.module';
@@ -47,6 +48,7 @@ import { ScimModule } from './scim/scim.module';
     LeaveTypesModule,
     LeaveBalancesModule,
     LeaveRequestsModule,
+    OnDutyRequestsModule,
     MeModule,
     TenantUsersModule,
     SamlConnectionsModule,

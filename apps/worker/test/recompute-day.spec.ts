@@ -51,6 +51,7 @@ function makeTx(options: {
   punches: ReturnType<typeof punch>[];
   holidays?: Array<{ id: string; name: string; locationId: string | null }>;
   approvedLeave?: { id: string; halfDay: boolean; leaveType: { name: string } } | null;
+  approvedOnDuty?: { id: string; halfDay: boolean; category: string } | null;
   exceptionCreateManyCount?: number | 'echo';
 }) {
   const shift =
@@ -83,6 +84,9 @@ function makeTx(options: {
     },
     leaveRequest: {
       findFirst: jest.fn().mockResolvedValue(options.approvedLeave ?? null),
+    },
+    onDutyRequest: {
+      findFirst: jest.fn().mockResolvedValue(options.approvedOnDuty ?? null),
     },
     attendanceDay: { upsert: attendanceDayUpsert },
     attendanceException: { createMany: attendanceExceptionCreateMany },
@@ -248,6 +252,44 @@ describe('recomputeDay', () => {
     await recomputeDay(tx, { tenantId, periodId, employeeId, workDate, timezone: 'UTC' });
     const createArgs = attendanceDayUpsert.mock.calls[0][0].create;
     expect(createArgs.status).toBe('HOLIDAY');
+  });
+
+  it('reports ON_DUTY (not ABSENT) with normal scheduled minutes and no MISSING_PUNCH/ABSENCE on an approved on-duty day with zero punches', async () => {
+    mockPolicy({});
+    const { tx, attendanceDayUpsert, attendanceExceptionCreateMany } = makeTx({
+      punches: [],
+      approvedOnDuty: { id: 'od-1', halfDay: false, category: 'CLIENT_VISIT' },
+    });
+    await recomputeDay(tx, { tenantId, periodId, employeeId, workDate, timezone: 'UTC' });
+    const createArgs = attendanceDayUpsert.mock.calls[0][0].create;
+    expect(createArgs.status).toBe('ON_DUTY');
+    // Unlike LEAVE, on-duty keeps the normal WORKING schedule (still off-site work).
+    expect(createArgs.scheduledMinutes).toBe(480);
+    expect(createArgs.calculationTrace.dayType).toBe('WORKING');
+    expect(createArgs.calculationTrace.onDuty).toMatchObject({ id: 'od-1', category: 'CLIENT_VISIT' });
+    expect(exceptionTypes(attendanceExceptionCreateMany)).not.toContain('ABSENCE');
+    expect(exceptionTypes(attendanceExceptionCreateMany)).not.toContain('MISSING_PUNCH');
+  });
+
+  it('does not suppress ABSENCE for a PARTIAL day under the half-day threshold without an approved on-duty request', async () => {
+    mockPolicy({});
+    const { tx, attendanceExceptionCreateMany } = makeTx({
+      punches: [punch('IN', '2026-08-12T09:30:00.000Z'), punch('OUT', '2026-08-12T12:00:00.000Z')],
+    });
+    await recomputeDay(tx, { tenantId, periodId, employeeId, workDate, timezone: 'UTC' });
+    expect(exceptionTypes(attendanceExceptionCreateMany)).toContain('ABSENCE');
+  });
+
+  it('suppresses ABSENCE for a PARTIAL day under the half-day threshold when covered by an approved on-duty request', async () => {
+    mockPolicy({});
+    const { tx, attendanceDayUpsert, attendanceExceptionCreateMany } = makeTx({
+      punches: [punch('IN', '2026-08-12T09:30:00.000Z'), punch('OUT', '2026-08-12T12:00:00.000Z')],
+      approvedOnDuty: { id: 'od-1', halfDay: false, category: 'CLIENT_VISIT' },
+    });
+    await recomputeDay(tx, { tenantId, periodId, employeeId, workDate, timezone: 'UTC' });
+    const createArgs = attendanceDayUpsert.mock.calls[0][0].create;
+    expect(createArgs.status).toBe('PARTIAL');
+    expect(exceptionTypes(attendanceExceptionCreateMany)).not.toContain('ABSENCE');
   });
 
   it('treats a non-working weekday as WEEKEND', async () => {
