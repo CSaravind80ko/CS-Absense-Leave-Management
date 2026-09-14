@@ -36,7 +36,11 @@ const DEFAULT_ASSIGNEE: Record<ApprovalType, ApplicationRole> = {
   PAYROLL_EXPORT: 'PAYROLL_ADMIN',
   LEAVE: 'MANAGER',
   ON_DUTY: 'MANAGER',
+  COMP_OFF: 'MANAGER',
 };
+
+const MS_PER_DAY = 86_400_000;
+const COMP_OFF_EXPIRY_DAYS = 90;
 
 @Injectable()
 export class ApprovalsService {
@@ -59,9 +63,10 @@ export class ApprovalsService {
               ],
             }
           : {};
-    // LEAVE/ON_DUTY requests carry neither periodId nor exceptionId - they aren't scoped to a
-    // processing period at all - so a periodId filter must not exclude them, or Team
-    // Approvals (which always filters by the currently selected period) would never show one.
+    // LEAVE/ON_DUTY/COMP_OFF requests carry neither periodId nor exceptionId - they aren't
+    // scoped to a processing period at all - so a periodId filter must not exclude them, or
+    // Team Approvals (which always filters by the currently selected period) would never
+    // show one.
     const periodScope: Prisma.ApprovalRequestWhereInput = query.periodId
       ? {
           OR: [
@@ -69,6 +74,7 @@ export class ApprovalsService {
             { exception: { attendanceDay: { periodId: query.periodId } } },
             { type: 'LEAVE' },
             { type: 'ON_DUTY' },
+            { type: 'COMP_OFF' },
           ],
         }
       : {};
@@ -113,6 +119,13 @@ export class ApprovalsService {
               },
             },
           },
+          compOffCredit: {
+            include: {
+              employee: {
+                select: { id: true, employeeNumber: true, firstName: true, lastName: true },
+              },
+            },
+          },
           actions: { orderBy: { createdAt: 'asc' } },
         },
         orderBy: { [query.sortBy]: query.order },
@@ -134,6 +147,7 @@ export class ApprovalsService {
         },
         leaveRequest: { include: { employee: true, leaveType: true } },
         onDutyRequest: { include: { employee: true } },
+        compOffCredit: { include: { employee: true } },
         actions: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -275,6 +289,9 @@ export class ApprovalsService {
       if (request.type === 'ON_DUTY' && request.onDutyRequestId && nextStatus) {
         await this.applyOnDutyDecision(tx, tenantId, request.onDutyRequestId, nextStatus, subject);
       }
+      if (request.type === 'COMP_OFF' && request.compOffCreditId && nextStatus) {
+        await this.applyCompOffDecision(tx, tenantId, request.compOffCreditId, nextStatus, subject);
+      }
       return tx.approvalRequest.findFirstOrThrow({
         where: { id, tenantId },
       });
@@ -367,6 +384,81 @@ export class ApprovalsService {
       'ON_DUTY_APPROVED',
       actorSubject,
     );
+  }
+
+  /**
+   * Keeps CompOffCredit.status in sync with its ApprovalRequest, and - only on APPROVED -
+   * sets expiresAt and deposits creditDays into the tenant's isCompOff LeaveType balance
+   * (upserting the LeaveBalance row if none exists yet for that employee/year). No attendance
+   * recompute here - unlike leave/on-duty, approving a credit doesn't change any AttendanceDay,
+   * it only makes a balance spendable via the normal LeaveRequest flow. Requires exactly one
+   * active LeaveType with isCompOff=true to exist; HR configures that once via the Leave
+   * Types screen, same as any other leave type.
+   */
+  private async applyCompOffDecision(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    compOffCreditId: string,
+    nextStatus: ApprovalStatus,
+    actorSubject: string,
+  ): Promise<void> {
+    const credit = await tx.compOffCredit.findFirstOrThrow({
+      where: { id: compOffCreditId, tenantId },
+    });
+    const expiresAt =
+      nextStatus === 'APPROVED'
+        ? new Date(credit.workedDate.getTime() + COMP_OFF_EXPIRY_DAYS * MS_PER_DAY)
+        : credit.expiresAt;
+    await tx.compOffCredit.update({
+      where: { id: compOffCreditId },
+      data: { status: nextStatus, decidedAt: new Date(), expiresAt },
+    });
+    if (nextStatus !== 'APPROVED') return;
+
+    const compOffType = await tx.leaveType.findFirst({
+      where: { tenantId, isCompOff: true, active: true },
+    });
+    if (!compOffType) {
+      throw new ConflictException(
+        'No active comp-off leave type is configured for this tenant; ask an admin to mark one in Leave Types before approving',
+      );
+    }
+    const year = credit.workedDate.getUTCFullYear();
+    const balance = await tx.leaveBalance.findFirst({
+      where: { tenantId, employeeId: credit.employeeId, leaveTypeId: compOffType.id, year },
+    });
+    if (balance) {
+      await tx.leaveBalance.update({
+        where: { id: balance.id },
+        data: { allocatedDays: { increment: credit.creditDays } },
+      });
+    } else {
+      await tx.leaveBalance.create({
+        data: {
+          tenantId,
+          employeeId: credit.employeeId,
+          leaveTypeId: compOffType.id,
+          year,
+          allocatedDays: credit.creditDays,
+        },
+      });
+    }
+    await tx.auditEvent.create({
+      data: {
+        tenantId,
+        actorSubject,
+        action: 'comp_off_credit.balance_deposited',
+        entityType: 'LeaveBalance',
+        entityId: balance?.id ?? credit.id,
+        metadata: {
+          compOffCreditId: credit.id,
+          employeeId: credit.employeeId,
+          leaveTypeId: compOffType.id,
+          year,
+          creditDays: credit.creditDays.toString(),
+        },
+      },
+    });
   }
 
   private async enqueueEmployeeRecompute(

@@ -5,6 +5,7 @@ const tenantId = 'de305d54-75b4-431b-adb2-eb6b9e546014';
 const approvalId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
 const leaveRequestId = '8d11d74a-e6b1-4a4c-9104-59538a65f28d';
 const onDutyRequestId = '81d4fae4-6c11-4bb5-9170-eea7fe9d9dd0';
+const compOffCreditId = '11111111-2222-4111-8111-111111111111';
 const employeeId = '11111111-1111-4111-8111-111111111111';
 
 function pendingOnDutyApproval(overrides: Partial<Record<string, unknown>> = {}) {
@@ -15,6 +16,21 @@ function pendingOnDutyApproval(overrides: Partial<Record<string, unknown>> = {})
     status: 'PENDING',
     version: 1,
     onDutyRequestId,
+    requestedBy: 'employee-subject',
+    assigneeSubject: null,
+    assigneeRole: 'MANAGER',
+    ...overrides,
+  };
+}
+
+function pendingCompOffApproval(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: approvalId,
+    tenantId,
+    type: 'COMP_OFF',
+    status: 'PENDING',
+    version: 1,
+    compOffCreditId,
     requestedBy: 'employee-subject',
     assigneeSubject: null,
     assigneeRole: 'MANAGER',
@@ -317,5 +333,166 @@ describe('ApprovalsService.act — ON_DUTY integration', () => {
       expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }),
     );
     expect(recomputeJobCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('ApprovalsService.act — COMP_OFF integration', () => {
+  const creditDays = { toString: () => '1' };
+
+  function pendingCredit(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: compOffCreditId,
+      tenantId,
+      employeeId,
+      workedDate: new Date('2026-09-06'),
+      creditDays,
+      ...overrides,
+    };
+  }
+
+  it('approving sets expiresAt and creates a new LeaveBalance when none existed', async () => {
+    const creditUpdate = jest.fn().mockResolvedValue({});
+    const balanceCreate = jest.fn().mockResolvedValue({ id: 'balance-id' });
+    const tx = {
+      approvalRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirstOrThrow: jest.fn().mockResolvedValue({ id: approvalId, status: 'APPROVED' }),
+      },
+      approvalAction: { create: jest.fn().mockResolvedValue({}) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      compOffCredit: {
+        findFirstOrThrow: jest.fn().mockResolvedValue(pendingCredit()),
+        update: creditUpdate,
+      },
+      leaveType: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'comp-off-type-id' }),
+      },
+      leaveBalance: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: balanceCreate,
+      },
+    };
+    const prisma = {
+      approvalRequest: { findFirst: jest.fn().mockResolvedValue(pendingCompOffApproval()) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ApprovalsService(prisma);
+
+    await service.act(tenantId, approvalId, 'manager-subject', 'MANAGER', {
+      action: 'APPROVED',
+      version: 1,
+    });
+
+    expect(creditUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'APPROVED', expiresAt: new Date('2026-12-05') }),
+      }),
+    );
+    expect(balanceCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tenantId, employeeId, leaveTypeId: 'comp-off-type-id', year: 2026, allocatedDays: creditDays,
+        }),
+      }),
+    );
+  });
+
+  it('approving increments an existing LeaveBalance instead of creating a new one', async () => {
+    const balanceUpdate = jest.fn().mockResolvedValue({});
+    const balanceCreate = jest.fn();
+    const tx = {
+      approvalRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirstOrThrow: jest.fn().mockResolvedValue({ id: approvalId, status: 'APPROVED' }),
+      },
+      approvalAction: { create: jest.fn().mockResolvedValue({}) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      compOffCredit: {
+        findFirstOrThrow: jest.fn().mockResolvedValue(pendingCredit()),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      leaveType: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'comp-off-type-id' }),
+      },
+      leaveBalance: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'existing-balance-id' }),
+        update: balanceUpdate,
+        create: balanceCreate,
+      },
+    };
+    const prisma = {
+      approvalRequest: { findFirst: jest.fn().mockResolvedValue(pendingCompOffApproval()) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ApprovalsService(prisma);
+
+    await service.act(tenantId, approvalId, 'manager-subject', 'MANAGER', {
+      action: 'APPROVED',
+      version: 1,
+    });
+
+    expect(balanceUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'existing-balance-id' },
+        data: { allocatedDays: { increment: creditDays } },
+      }),
+    );
+    expect(balanceCreate).not.toHaveBeenCalled();
+  });
+
+  it('throws when no active isCompOff leave type is configured', async () => {
+    const tx = {
+      approvalRequest: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      approvalAction: { create: jest.fn().mockResolvedValue({}) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      compOffCredit: {
+        findFirstOrThrow: jest.fn().mockResolvedValue(pendingCredit()),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      leaveType: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const prisma = {
+      approvalRequest: { findFirst: jest.fn().mockResolvedValue(pendingCompOffApproval()) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ApprovalsService(prisma);
+
+    await expect(
+      service.act(tenantId, approvalId, 'manager-subject', 'MANAGER', { action: 'APPROVED', version: 1 }),
+    ).rejects.toThrow('No active comp-off leave type is configured');
+  });
+
+  it('rejecting updates CompOffCredit.status without touching any leave balance', async () => {
+    const creditUpdate = jest.fn().mockResolvedValue({});
+    const leaveTypeFindFirst = jest.fn();
+    const tx = {
+      approvalRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirstOrThrow: jest.fn().mockResolvedValue({ id: approvalId, status: 'REJECTED' }),
+      },
+      approvalAction: { create: jest.fn().mockResolvedValue({}) },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      compOffCredit: {
+        findFirstOrThrow: jest.fn().mockResolvedValue(pendingCredit()),
+        update: creditUpdate,
+      },
+      leaveType: { findFirst: leaveTypeFindFirst },
+    };
+    const prisma = {
+      approvalRequest: { findFirst: jest.fn().mockResolvedValue(pendingCompOffApproval()) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new ApprovalsService(prisma);
+
+    await service.act(tenantId, approvalId, 'manager-subject', 'MANAGER', {
+      action: 'REJECTED',
+      version: 1,
+      comment: 'No coverage gap actually existed',
+    });
+
+    expect(creditUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }),
+    );
+    expect(leaveTypeFindFirst).not.toHaveBeenCalled();
   });
 });
