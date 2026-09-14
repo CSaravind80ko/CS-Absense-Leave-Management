@@ -28,6 +28,19 @@ export class EmployeesService {
     return employee;
   }
 
+  // Resolves the Employee row for the currently authenticated tenant member, for
+  // self-service features (leave requests, balances). Not every tenant member is on the
+  // employee roster (e.g. an AUDITOR-only account), so this can legitimately fail.
+  async getByCognitoSubject(tenantId: string, cognitoSubject: string): Promise<Employee> {
+    const employee = await this.prisma.employee.findFirst({
+      where: { tenantId, cognitoSubject },
+    });
+    if (!employee) {
+      throw new NotFoundException('Your account is not linked to an employee record');
+    }
+    return employee;
+  }
+
   async create(tenantId: string, dto: CreateEmployeeDto): Promise<Employee> {
     await this.validateReferences(tenantId, dto);
     return this.writeEmployee(() =>
