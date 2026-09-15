@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { AttendanceSourceConnectionsModule } from './attendance-source-connections/attendance-source-connections.module';
 import { AuditEventsModule } from './audit-events/audit-events.module';
 import { CompOffCreditsModule } from './comp-off-credits/comp-off-credits.module';
 import { IdentityDiscoveryController } from './auth/identity-discovery.controller';
@@ -55,6 +56,7 @@ import { ScimModule } from './scim/scim.module';
     TenantUsersModule,
     SamlConnectionsModule,
     ScimModule,
+    AttendanceSourceConnectionsModule,
   ],
   controllers: [HealthController, IdentityDiscoveryController],
   providers: [

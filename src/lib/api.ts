@@ -390,6 +390,36 @@ export interface CompOffEligibleDay {
   status: 'HOLIDAY' | 'WEEKEND'
 }
 
+export type AttendanceSourceType = 'ESSL_BIOMETRIC' | 'GREYTHR' | 'SFTP' | 'MANUAL_FILE'
+export type AttendanceSourceConnectionStatus = 'DRAFT' | 'READY' | 'ACTIVE' | 'DISABLED'
+
+export interface AttendanceSourceSyncLog {
+  id: string
+  connectionId: string
+  status: 'SUCCESS' | 'FAILED'
+  recordCount: number | null
+  note: string | null
+  occurredAt: string
+  recordedBy: string
+}
+
+export interface AttendanceSourceConnection {
+  id: string
+  type: AttendanceSourceType
+  name: string
+  status: AttendanceSourceConnectionStatus
+  config: Record<string, unknown> | null
+  credentialReference: string | null
+  lastSyncAt: string | null
+  lastSyncStatus: string | null
+  lastSyncRecordCount: number | null
+  activatedAt: string | null
+  disabledAt: string | null
+  createdAt: string
+  updatedAt: string
+  syncLogs?: AttendanceSourceSyncLog[]
+}
+
 export interface ApprovalRequest {
   id: string
   type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT' | 'LEAVE' | 'ON_DUTY' | 'COMP_OFF'
@@ -1121,6 +1151,35 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       request<CompOffEligibleDay[]>('/comp-off-credits/eligible-days', { signal }),
     submitCompOffCredit: (input: { workedDate: string; reason?: string }) =>
       request<CompOffCredit>('/comp-off-credits', { method: 'POST', body: JSON.stringify(input) }),
+    getSourceConnections: (signal?: AbortSignal) =>
+      request<AttendanceSourceConnection[]>('/integrations/connections', { signal }),
+    getSourceConnection: (id: string, signal?: AbortSignal) =>
+      request<AttendanceSourceConnection>(`/integrations/connections/${id}`, { signal }),
+    createSourceConnection: (input: {
+      type: AttendanceSourceType; name: string; config?: Record<string, unknown>; credentialReference?: string
+    }) => request<AttendanceSourceConnection>('/integrations/connections', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    updateSourceConnection: (
+      id: string,
+      input: { name?: string; config?: Record<string, unknown>; credentialReference?: string },
+    ) => request<AttendanceSourceConnection>(`/integrations/connections/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+    transitionSourceConnection: (id: string, status: AttendanceSourceConnectionStatus) =>
+      request<AttendanceSourceConnection>(`/integrations/connections/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
+    recordSourceConnectionSync: (
+      id: string,
+      input: { status: 'SUCCESS' | 'FAILED'; recordCount?: number; note?: string },
+    ) => request<AttendanceSourceSyncLog>(`/integrations/connections/${id}/sync-logs`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   }
 }
 

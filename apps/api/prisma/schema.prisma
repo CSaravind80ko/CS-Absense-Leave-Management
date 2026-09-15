@@ -37,6 +37,20 @@ enum SamlConnectionStatus {
   ERROR
 }
 
+enum AttendanceSourceType {
+  ESSL_BIOMETRIC
+  GREYTHR
+  SFTP
+  MANUAL_FILE
+}
+
+enum AttendanceSourceConnectionStatus {
+  DRAFT
+  READY
+  ACTIVE
+  DISABLED
+}
+
 enum TenantUserStatus {
   INVITED
   ACTIVE
@@ -254,6 +268,8 @@ model Tenant {
   leaveRequests       LeaveRequest[]
   onDutyRequests      OnDutyRequest[]
   compOffCredits      CompOffCredit[]
+  attendanceSourceConnections AttendanceSourceConnection[]
+  attendanceSourceSyncLogs    AttendanceSourceSyncLog[]
 }
 
 model TenantMembership {
@@ -1252,8 +1268,9 @@ enum CompOffCreditStatus {
 /// approves it through the same ApprovalRequest pipeline as leave/on-duty, and approval
 /// deposits creditDays into the tenant's isCompOff LeaveType balance - redeeming it then
 /// reuses the existing LeaveRequest flow entirely rather than a second spend-side system.
-/// expiresAt is informational for this slice: nothing automatically claws back the balance
-/// when it passes (would need a scheduled job) - a documented follow-up, not this one.
+/// expiresAt drives an approximate clawback: apps/worker's CompOffExpiryService sweeps past-due
+/// APPROVED credits, reclaims their days from the pooled balance up to its current headroom, and
+/// moves them to EXPIRED - see that service for why the clawback is approximate, not exact.
 model CompOffCredit {
   id               String              @id @default(uuid()) @db.Uuid
   tenantId         String              @db.Uuid
@@ -1276,4 +1293,50 @@ model CompOffCredit {
   @@unique([tenantId, employeeId, workedDate])
   @@index([tenantId, employeeId, status])
   @@index([tenantId, status])
+}
+
+/// Connection management only, not live syncing: stores how a source system (ESSL biometric
+/// device feed, greytHR, an SFTP drop, or manual upload) is configured and its status/history,
+/// so the settings exist ahead of the actual vendor integration. config holds non-secret
+/// settings (host, path, schedule); credentialReference points at a secret elsewhere (Secrets
+/// Manager, etc.) - the raw secret is never stored here. Sync execution and sync-log entries
+/// are recorded by whatever runs the actual pull; until a real connector exists, admins record
+/// sync outcomes manually via AttendanceSourceSyncLog for audit visibility.
+model AttendanceSourceConnection {
+  id                  String                            @id @default(uuid()) @db.Uuid
+  tenantId            String                            @db.Uuid
+  type                AttendanceSourceType
+  name                String
+  status              AttendanceSourceConnectionStatus  @default(DRAFT)
+  config              Json?
+  credentialReference String?
+  lastSyncAt          DateTime?
+  lastSyncStatus      String?
+  lastSyncRecordCount Int?
+  activatedAt         DateTime?
+  disabledAt          DateTime?
+  createdAt           DateTime                          @default(now())
+  updatedAt           DateTime                          @updatedAt
+  tenant              Tenant                            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  syncLogs            AttendanceSourceSyncLog[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+}
+
+model AttendanceSourceSyncLog {
+  id           String                     @id @default(uuid()) @db.Uuid
+  tenantId     String                     @db.Uuid
+  connectionId String                     @db.Uuid
+  status       String
+  recordCount  Int?
+  note         String?
+  occurredAt   DateTime                   @default(now())
+  recordedBy   String
+  tenant       Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection   AttendanceSourceConnection @relation(fields: [connectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, connectionId, occurredAt])
 }
