@@ -347,6 +347,7 @@ const COMP_OFF_STATUS_TONE: Record<CompOffCreditStatus, string> = {
   APPROVED: 'green',
   REJECTED: 'red',
   CANCELLED: 'neutral',
+  EXPIRED: 'neutral',
 }
 
 function CompOffPanel({ api, isAdmin, notify }: { api: ApiClient; isAdmin: boolean; notify: Notify }) {

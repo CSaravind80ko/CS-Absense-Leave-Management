@@ -1244,6 +1244,7 @@ enum CompOffCreditStatus {
   APPROVED
   REJECTED
   CANCELLED
+  EXPIRED
 }
 
 /// Earned, not requested: an employee claims credit for a worked HOLIDAY/WEEKEND day (see
