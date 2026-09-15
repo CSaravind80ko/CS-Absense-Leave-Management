@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { AuditEventsModule } from './audit-events/audit-events.module';
@@ -8,7 +8,9 @@ import { IdentityDiscoveryController } from './auth/identity-discovery.controlle
 import { IdentityDiscoveryService } from './auth/identity-discovery.service';
 import { IdentityMembershipService } from './auth/identity-membership.service';
 import { IdentityTokenVerifier } from './auth/identity-token-verifier.service';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { IdentityAuthGuard } from './common/guards/identity-auth.guard';
+import { RateLimitGuard } from './common/guards/rate-limit.guard';
 import { TenantGuard } from './common/guards/tenant.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { EmployeeGroupsModule } from './employee-groups/employee-groups.module';
@@ -61,9 +63,11 @@ import { ScimModule } from './scim/scim.module';
     IdentityDiscoveryService,
     IdentityMembershipService,
     IdentityTokenVerifier,
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_GUARD, useClass: IdentityAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
   ],
   exports: [IdentityMembershipService],
 })

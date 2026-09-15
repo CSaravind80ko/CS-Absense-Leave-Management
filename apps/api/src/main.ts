@@ -1,12 +1,20 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { json } from 'express';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { configureDatabaseUrl } from './config/database';
 
 async function bootstrap(): Promise<void> {
   configureDatabaseUrl();
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+  // Behind the ALB, express.req.ip otherwise resolves to the load balancer's address for
+  // every request, which would make the rate limiter treat all clients as a single one.
+  app.set('trust proxy', Number(process.env.API_TRUST_PROXY_HOPS ?? 1));
+  app.use(helmet());
   app.use(
     json({
       limit: process.env.API_JSON_BODY_LIMIT ?? '256kb',
