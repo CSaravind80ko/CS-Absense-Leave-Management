@@ -366,7 +366,7 @@ export interface OnDutyRequest {
   approvalRequests: Array<{ id: string; version: number; status: string }>
 }
 
-export type CompOffCreditStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+export type CompOffCreditStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED'
 
 export interface CompOffCredit {
   id: string
