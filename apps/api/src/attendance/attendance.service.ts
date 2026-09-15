@@ -28,6 +28,7 @@ import {
 } from './dto/attendance-query.dto';
 import { CreateImportJobDto } from './dto/create-import-job.dto';
 import { CreatePeriodDto } from './dto/create-period.dto';
+import { ReconcilePeriodDto } from './dto/reconcile-period.dto';
 import { UpdatePeriodStatusDto } from './dto/update-period-status.dto';
 
 const FORWARD_TRANSITIONS: Readonly<
@@ -205,6 +206,61 @@ export class AttendanceService {
             status: dto.status,
             version: period.version + 1,
             reason: dto.reason?.trim(),
+          },
+        },
+      });
+      return tx.processingPeriod.findFirstOrThrow({
+        where: { id, tenantId },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  async reconcilePeriod(
+    tenantId: string,
+    id: string,
+    subject: string,
+    dto: ReconcilePeriodDto,
+  ): Promise<ProcessingPeriod> {
+    const period = await this.prisma.processingPeriod.findFirst({
+      where: { id, tenantId },
+    });
+    if (!period) throw new NotFoundException('Processing period not found');
+    if (period.status !== 'CLOSED') {
+      throw new BadRequestException(
+        'A period must be CLOSED before it can be reconciled',
+      );
+    }
+    if (period.reconciledAt) {
+      throw new ConflictException('This period has already been reconciled');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.processingPeriod.updateMany({
+        where: { id, tenantId, version: dto.version, status: 'CLOSED' },
+        data: {
+          version: { increment: 1 },
+          reconciledAt: new Date(),
+          reconciledBy: subject,
+          reconciliationNote: dto.note?.trim() || null,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException(
+          'Processing period changed; refresh and retry with the latest version',
+        );
+      }
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          actorSubject: subject,
+          action: 'attendance.period.reconciled',
+          entityType: 'ProcessingPeriod',
+          entityId: id,
+          before: { reconciledAt: null, version: period.version },
+          after: {
+            reconciledAt: new Date().toISOString(),
+            reconciledBy: subject,
+            note: dto.note?.trim(),
+            version: period.version + 1,
           },
         },
       });
