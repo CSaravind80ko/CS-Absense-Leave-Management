@@ -23,6 +23,7 @@ import { CreateImportJobDto } from './dto/create-import-job.dto';
 import { CreateImportUploadDto } from './dto/create-import-upload.dto';
 import { CreatePeriodDto } from './dto/create-period.dto';
 import { ImportStorageService } from './import-storage.service';
+import { ReconcilePeriodDto } from './dto/reconcile-period.dto';
 import { UpdatePeriodStatusDto } from './dto/update-period-status.dto';
 
 @Controller('attendance')
@@ -71,6 +72,21 @@ export class AttendanceController {
     @Body() dto: UpdatePeriodStatusDto,
   ) {
     return this.attendance.updatePeriodStatus(tenantId, id, subject, dto);
+  }
+
+  @Post('periods/:id/reconcile')
+  @Roles(
+    ApplicationRole.TENANT_ADMIN,
+    ApplicationRole.HR_ADMIN,
+    ApplicationRole.PAYROLL_ADMIN,
+  )
+  reconcilePeriod(
+    @TenantId() tenantId: string,
+    @Subject() subject: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReconcilePeriodDto,
+  ) {
+    return this.attendance.reconcilePeriod(tenantId, id, subject, dto);
   }
 
   @Get('register')

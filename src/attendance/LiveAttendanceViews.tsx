@@ -138,10 +138,22 @@ export function ProcessingPeriodsView({
   notify: Notify
 }) {
   const [reason, setReason] = useState('')
+  const [reconcileNote, setReconcileNote] = useState('')
   const [draft, setDraft] = useState({ name: '', startsOn: '', endsOn: '' })
   const [saving, setSaving] = useState('')
   const [error, setError] = useState('')
   const canManage = role === 'TENANT_ADMIN' || role === 'HR_ADMIN'
+  const canReconcile = canManage || role === 'PAYROLL_ADMIN'
+  const reconcile = async (period: ProcessingPeriod) => {
+    setSaving(period.id)
+    setError('')
+    try {
+      await api.reconcileAttendancePeriod(period.id, { version: period.version, note: reconcileNote.trim() || undefined })
+      setReconcileNote('')
+      await onRefresh()
+      notify('Period marked as reconciled.')
+    } catch (caught) { setError(errorMessage(caught)) } finally { setSaving('') }
+  }
   const transition = async (period: ProcessingPeriod, status: PeriodStatus, reopen = false) => {
     if (reopen && reason.trim().length < 3) {
       setError('Enter a reopen reason of at least three characters.')
@@ -175,8 +187,9 @@ export function ProcessingPeriodsView({
     <div className="page-top"><p>Explicit, versioned processing lifecycle with blocker checks and audited reopen actions.</p><Badge tone="blue">{periods.length} periods</Badge></div>
     {error && <div className="alert-box"><AlertTriangle size={18}/><div><b>Period action failed</b><p>{error}</p></div></div>}
     {canManage && <section className="freeze-row panel"><div><CalendarIcon/><div><b>Create processing period</b><p>Overlapping tenant periods are rejected by the API.</p></div></div><input value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} placeholder="Period name"/><input type="date" value={draft.startsOn} onChange={event => setDraft(current => ({ ...current, startsOn: event.target.value }))}/><input type="date" value={draft.endsOn} onChange={event => setDraft(current => ({ ...current, endsOn: event.target.value }))}/><button className="primary" disabled={saving === 'create'} onClick={() => void createPeriod()}>Create</button></section>}
-    {periods.length === 0 ? <LoadState loading={false} error="" empty retry={() => void onRefresh()}/> : <section className="panel table-panel"><table><thead><tr><th>Period</th><th>Dates</th><th>Status</th><th>Version</th><th>Updated</th><th>Actions</th></tr></thead><tbody>{periods.map(period => <tr key={period.id} className={period.id === selectedPeriodId ? 'selected-row' : ''}><td><button className="text-button" onClick={() => onSelect(period.id)}><b>{period.name}</b></button></td><td>{formatDate(period.startsOn)} – {formatDate(period.endsOn)}</td><td><Badge tone={period.status === 'CLOSED' ? 'green' : period.status === 'APPROVED' ? 'blue' : 'amber'}>{label(period.status)}</Badge></td><td>v{period.version}</td><td>{formatDate(period.updatedAt)}</td><td><div className="table-actions">{canManage && FORWARD_STATUS[period.status] && <button className="approve" disabled={saving === period.id} onClick={() => void transition(period, FORWARD_STATUS[period.status]!)}>{saving === period.id ? 'Saving…' : `Move to ${label(FORWARD_STATUS[period.status]!)}`}</button>}{canManage && REOPEN_STATUS[period.status] && period.id === selectedPeriodId && <button className="secondary small" disabled={saving === period.id} onClick={() => void transition(period, REOPEN_STATUS[period.status]!, true)}>Reopen</button>}</div></td></tr>)}</tbody></table></section>}
+    {periods.length === 0 ? <LoadState loading={false} error="" empty retry={() => void onRefresh()}/> : <section className="panel table-panel"><table><thead><tr><th>Period</th><th>Dates</th><th>Status</th><th>Version</th><th>Updated</th><th>Reconciliation</th><th>Actions</th></tr></thead><tbody>{periods.map(period => <tr key={period.id} className={period.id === selectedPeriodId ? 'selected-row' : ''}><td><button className="text-button" onClick={() => onSelect(period.id)}><b>{period.name}</b></button></td><td>{formatDate(period.startsOn)} – {formatDate(period.endsOn)}</td><td><Badge tone={period.status === 'CLOSED' ? 'green' : period.status === 'APPROVED' ? 'blue' : 'amber'}>{label(period.status)}</Badge></td><td>v{period.version}</td><td>{formatDate(period.updatedAt)}</td><td>{period.reconciledAt ? <Badge tone="green">Reconciled</Badge> : period.status === 'CLOSED' ? <Badge tone="amber">Pending</Badge> : <span className="muted">—</span>}{period.reconciledAt && <small className="subline">{period.reconciledBy} · {formatDate(period.reconciledAt)}</small>}</td><td><div className="table-actions">{canManage && FORWARD_STATUS[period.status] && <button className="approve" disabled={saving === period.id} onClick={() => void transition(period, FORWARD_STATUS[period.status]!)}>{saving === period.id ? 'Saving…' : `Move to ${label(FORWARD_STATUS[period.status]!)}`}</button>}{canManage && REOPEN_STATUS[period.status] && period.id === selectedPeriodId && <button className="secondary small" disabled={saving === period.id} onClick={() => void transition(period, REOPEN_STATUS[period.status]!, true)}>Reopen</button>}{canReconcile && period.status === 'CLOSED' && !period.reconciledAt && <button className="secondary small" disabled={saving === period.id} onClick={() => void reconcile(period)}>{saving === period.id ? 'Saving…' : 'Mark reconciled'}</button>}</div></td></tr>)}</tbody></table></section>}
     {canManage && selectedPeriodId && REOPEN_STATUS[periods.find(item => item.id === selectedPeriodId)?.status ?? 'CLOSED'] && <section className="freeze-row panel"><div><ShieldCheck size={22}/><div><b>Audited reopen reason</b><p>Required before moving this period back into correction.</p></div></div><input value={reason} onChange={event => setReason(event.target.value)} placeholder="Explain why this period must be reopened"/></section>}
+    {canReconcile && periods.some(period => period.status === 'CLOSED' && !period.reconciledAt) && <section className="freeze-row panel"><div><CheckCircle2 size={22}/><div><b>Reconciliation note</b><p>Optional context recorded when a closed period is marked reconciled against the actual payroll run.</p></div></div><input value={reconcileNote} onChange={event => setReconcileNote(event.target.value)} placeholder="e.g. Confirmed processed by finance, no discrepancies"/></section>}
   </>
 }
 

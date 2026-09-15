@@ -133,6 +133,116 @@ describe('AttendanceService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('rejects reconciling a period that is not CLOSED', async () => {
+    const prisma = {
+      processingPeriod: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: periodId,
+          tenantId,
+          status: 'EXPORTED',
+          version: 4,
+          reconciledAt: null,
+        }),
+      },
+    } as unknown as PrismaService;
+    const service = new AttendanceService(prisma);
+
+    await expect(
+      service.reconcilePeriod(tenantId, periodId, 'actor', { version: 4 }),
+    ).rejects.toThrow('must be CLOSED');
+  });
+
+  it('rejects reconciling a period that was already reconciled', async () => {
+    const prisma = {
+      processingPeriod: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: periodId,
+          tenantId,
+          status: 'CLOSED',
+          version: 5,
+          reconciledAt: new Date('2026-09-01T00:00:00.000Z'),
+        }),
+      },
+    } as unknown as PrismaService;
+    const service = new AttendanceService(prisma);
+
+    await expect(
+      service.reconcilePeriod(tenantId, periodId, 'actor', { version: 5 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects a stale version when reconciling', async () => {
+    const tx = {
+      processingPeriod: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    const prisma = {
+      processingPeriod: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: periodId,
+          tenantId,
+          status: 'CLOSED',
+          version: 6,
+          reconciledAt: null,
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new AttendanceService(prisma);
+
+    await expect(
+      service.reconcilePeriod(tenantId, periodId, 'actor', { version: 5 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('records reconciliation with the actor, note, and audit trail', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const auditCreate = jest.fn().mockResolvedValue({});
+    const findFirstOrThrow = jest
+      .fn()
+      .mockResolvedValue({ id: periodId, tenantId, status: 'CLOSED', version: 7 });
+    const tx = {
+      processingPeriod: { updateMany, findFirstOrThrow },
+      auditEvent: { create: auditCreate },
+    };
+    const prisma = {
+      processingPeriod: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: periodId,
+          tenantId,
+          status: 'CLOSED',
+          version: 6,
+          reconciledAt: null,
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new AttendanceService(prisma);
+
+    await service.reconcilePeriod(tenantId, periodId, 'actor', {
+      version: 6,
+      note: 'Confirmed processed by finance',
+    });
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: periodId, tenantId, version: 6, status: 'CLOSED' },
+      data: expect.objectContaining({
+        reconciledBy: 'actor',
+        reconciliationNote: 'Confirmed processed by finance',
+      }),
+    });
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'attendance.period.reconciled',
+          entityType: 'ProcessingPeriod',
+          entityId: periodId,
+        }),
+      }),
+    );
+  });
+
   it('requires a ready export for the current period version', async () => {
     const payrollCount = jest.fn().mockResolvedValue(0);
     const tx = {

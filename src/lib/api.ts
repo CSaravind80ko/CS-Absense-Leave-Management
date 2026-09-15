@@ -231,6 +231,9 @@ export interface ProcessingPeriod {
   lockedAt: string | null
   reopenedAt: string | null
   reopenReason: string | null
+  reconciledAt: string | null
+  reconciledBy: string | null
+  reconciliationNote: string | null
   updatedAt: string
 }
 
@@ -689,6 +692,13 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       input: { status: PeriodStatus; version: number; reason?: string },
     ) => request<ProcessingPeriod>(`/attendance/periods/${id}/status`, {
       method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+    reconcileAttendancePeriod: (
+      id: string,
+      input: { version: number; note?: string },
+    ) => request<ProcessingPeriod>(`/attendance/periods/${id}/reconcile`, {
+      method: 'POST',
       body: JSON.stringify(input),
     }),
     getAttendanceDashboard: (periodId: string, signal?: AbortSignal) =>
