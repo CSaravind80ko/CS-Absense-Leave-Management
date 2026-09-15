@@ -80,10 +80,10 @@ describe('CompOffExpiryService.sweep', () => {
           allocatedDays: decimal(1.5),
           usedDays: decimal(1),
         }),
+        update: balanceUpdate,
       },
       auditEvent: { create: jest.fn().mockResolvedValue({}) },
     };
-    tx.leaveBalance.update = balanceUpdate;
     const prisma = {
       compOffCredit: {
         findMany: jest.fn().mockResolvedValue([
