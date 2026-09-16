@@ -10,6 +10,7 @@ import { AuthGate } from './auth/AuthScreens'
 import { useAuth } from './auth/useAuth'
 import { EmployeesView } from './employees/EmployeesView'
 import { IntegrationSettingsView } from './integrations/IntegrationSettingsView'
+import { ReportsView } from './reports/ReportsView'
 import { LeaveManagementView } from './leave/LeaveManagementView'
 import { PolicyConfigurationView } from './policies/PolicyConfigurationView'
 import { UserManagementView } from './users/UserManagementView'
@@ -182,6 +183,7 @@ function PrototypeApp({ tenants, tenantId, onTenantChange }: { tenants: TenantMe
     if (view === 'Rule Configuration') return <PolicyConfigurationView api={api} notify={notify} />
     if (view === 'User & Role Management') return <UserManagementView getAccessToken={getAccessToken} tenantId={tenantId} />
     if (view === 'Integration Settings') return <IntegrationSettingsView api={api} role={selectedTenant.role} notify={notify} />
+    if (view === 'Reports') return <ReportsView api={api} />
     if (view === 'Audit Trail') return <AuditTrailView api={api} />
     return <GenericPage title={view} />
   }, [view, persona, getAccessToken, tenantId, api, periods, selectedPeriodId, selectedPeriod, selectedTenant.role, periodLoading, periodError, loadPeriods])

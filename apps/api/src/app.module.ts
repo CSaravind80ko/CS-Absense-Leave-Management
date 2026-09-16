@@ -26,6 +26,7 @@ import { PayrollModule } from './payroll/payroll.module';
 import { PoliciesModule } from './policies/policies.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RecomputeJobsModule } from './recompute-jobs/recompute-jobs.module';
+import { ReportsModule } from './reports/reports.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { MeModule } from './me/me.module';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
@@ -57,6 +58,7 @@ import { ScimModule } from './scim/scim.module';
     SamlConnectionsModule,
     ScimModule,
     AttendanceSourceConnectionsModule,
+    ReportsModule,
   ],
   controllers: [HealthController, IdentityDiscoveryController],
   providers: [
