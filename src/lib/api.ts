@@ -454,6 +454,18 @@ export interface LeaveUtilizationRow {
   remainingDays: string
 }
 
+export interface AnomalyPattern {
+  id: string
+  employee: Pick<Employee, 'id' | 'employeeNumber' | 'firstName' | 'lastName'> & {
+    department: { id: string; name: string } | null
+  } | null
+  patternType: string
+  occurrenceCount: number
+  windowDays: number
+  severity: ExceptionSeverity
+  createdAt: string
+}
+
 export interface ApprovalRequest {
   id: string
   type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT' | 'LEAVE' | 'ON_DUTY' | 'COMP_OFF'
@@ -1226,6 +1238,8 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       ),
     getLeaveUtilizationReport: (year: number, signal?: AbortSignal) =>
       request<LeaveUtilizationRow[]>(`/reports/leave-utilization?year=${year}`, { signal }),
+    getAnomalyPatternsReport: (signal?: AbortSignal) =>
+      request<AnomalyPattern[]>('/reports/anomaly-patterns', { signal }),
   }
 }
 

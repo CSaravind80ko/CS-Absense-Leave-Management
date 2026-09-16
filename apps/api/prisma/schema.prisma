@@ -133,6 +133,10 @@ enum ExceptionType {
   INACTIVE_EMPLOYEE
   OUT_OF_PERIOD
   OUT_OF_LOCATION
+  /// A cross-day pattern flagged by apps/worker's AnomalyDetectionService (e.g. repeated
+  /// LATE_ARRIVAL/EARLY_DEPARTURE/OUT_OF_LOCATION within a rolling window) - unlike every
+  /// other type here, it is never raised by recomputeDay for a single AttendanceDay.
+  RECURRING_PATTERN
   OTHER
 }
 

@@ -1,6 +1,7 @@
 import { S3Client } from '@aws-sdk/client-s3';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { PrismaClient } from '@prisma/client';
+import { AnomalyDetectionService } from './anomaly-detection';
 import { CompOffExpiryService } from './comp-off-expiry';
 import { loadConfig } from './config';
 import { log } from './logger';
@@ -10,6 +11,7 @@ import { SqsEventPublisher } from './sqs-publisher';
 import { AttendanceSqsWorker } from './worker';
 
 const COMP_OFF_EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const ANOMALY_DETECTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 function configureDatabaseUrl(): void {
   if (process.env.DATABASE_URL) return;
@@ -38,8 +40,10 @@ async function main(): Promise<void> {
   const processor = new AttendanceEventProcessor(prisma, s3, config);
   const worker = new AttendanceSqsWorker(prisma, sqs, processor, config);
   const compOffExpiry = new CompOffExpiryService(prisma);
+  const anomalyDetection = new AnomalyDetectionService(prisma);
   let dispatchTimer: NodeJS.Timeout | undefined;
   let expiryTimer: NodeJS.Timeout | undefined;
+  let anomalyTimer: NodeJS.Timeout | undefined;
 
   const runExpirySweep = async () => {
     try {
@@ -54,10 +58,24 @@ async function main(): Promise<void> {
     }
   };
 
+  const runAnomalySweep = async () => {
+    try {
+      const flagged = await anomalyDetection.sweep();
+      if (flagged > 0) {
+        log('info', 'anomaly pattern sweep completed', { flagged });
+      }
+    } catch (error) {
+      log('error', 'anomaly pattern sweep failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
   const shutdown = () => {
     worker.stop();
     if (dispatchTimer) clearInterval(dispatchTimer);
     if (expiryTimer) clearInterval(expiryTimer);
+    if (anomalyTimer) clearInterval(anomalyTimer);
   };
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
@@ -71,10 +89,15 @@ async function main(): Promise<void> {
     expiryTimer = setInterval(() => {
       void runExpirySweep();
     }, COMP_OFF_EXPIRY_SWEEP_INTERVAL_MS);
+    await runAnomalySweep();
+    anomalyTimer = setInterval(() => {
+      void runAnomalySweep();
+    }, ANOMALY_DETECTION_SWEEP_INTERVAL_MS);
     await worker.run();
   } finally {
     if (dispatchTimer) clearInterval(dispatchTimer);
     if (expiryTimer) clearInterval(expiryTimer);
+    if (anomalyTimer) clearInterval(anomalyTimer);
     await dispatcher.dispatchBatch();
     await prisma.$disconnect();
   }

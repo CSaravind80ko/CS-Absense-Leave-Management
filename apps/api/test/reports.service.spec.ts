@@ -182,3 +182,61 @@ describe('ReportsService.leaveUtilization', () => {
     ]);
   });
 });
+
+describe('ReportsService.anomalyPatterns', () => {
+  it('returns only OPEN RECURRING_PATTERN exceptions, unpacking their details', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'exc-1',
+        severity: 'HIGH',
+        createdAt: new Date('2026-09-16T00:00:00.000Z'),
+        details: { patternType: 'LATE_ARRIVAL', occurrenceCount: 5, windowDays: 14 },
+        employee: {
+          id: 'emp-1',
+          employeeNumber: 'EMP-1',
+          firstName: 'Ananya',
+          lastName: 'Iyer',
+          department: { id: 'dept-1', name: 'Finance' },
+        },
+      },
+    ]);
+    const prisma = {
+      attendanceException: { findMany },
+    } as unknown as PrismaService;
+    const service = new ReportsService(prisma);
+
+    const result = await service.anomalyPatterns(tenantId);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId, type: 'RECURRING_PATTERN', status: 'OPEN' },
+      }),
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'exc-1',
+        patternType: 'LATE_ARRIVAL',
+        occurrenceCount: 5,
+        windowDays: 14,
+        severity: 'HIGH',
+      }),
+    ]);
+  });
+
+  it('falls back sensibly when details is missing', async () => {
+    const prisma = {
+      attendanceException: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'exc-2', severity: 'HIGH', createdAt: new Date(), details: null, employee: null },
+        ]),
+      },
+    } as unknown as PrismaService;
+    const service = new ReportsService(prisma);
+
+    const result = await service.anomalyPatterns(tenantId);
+
+    expect(result).toEqual([
+      expect.objectContaining({ patternType: 'OTHER', occurrenceCount: 0, windowDays: 0 }),
+    ]);
+  });
+});
