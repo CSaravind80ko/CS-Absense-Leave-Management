@@ -420,6 +420,40 @@ export interface AttendanceSourceConnection {
   syncLogs?: AttendanceSourceSyncLog[]
 }
 
+export interface AttendanceDepartmentSummary {
+  departmentId: string | null
+  departmentName: string
+  employeeCount: number
+  present: number
+  absent: number
+  partial: number
+  leave: number
+  holiday: number
+  weekend: number
+  onDuty: number
+  openExceptions: number
+}
+
+export interface ExceptionTrendPeriod {
+  periodId: string
+  periodName: string
+  total: number
+  critical: number
+  high: number
+  byType: Record<string, number>
+}
+
+export interface LeaveUtilizationRow {
+  leaveTypeId: string
+  name: string
+  isCompOff: boolean
+  paid: boolean
+  employeeCount: number
+  allocatedDays: string
+  usedDays: string
+  remainingDays: string
+}
+
 export interface ApprovalRequest {
   id: string
   type: 'ATTENDANCE_PERIOD' | 'EXCEPTION' | 'PAYROLL_EXPORT' | 'LEAVE' | 'ON_DUTY' | 'COMP_OFF'
@@ -1180,6 +1214,18 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
       method: 'POST',
       body: JSON.stringify(input),
     }),
+    getAttendanceSummaryReport: (periodId: string, signal?: AbortSignal) =>
+      request<AttendanceDepartmentSummary[]>(
+        `/reports/attendance-summary?periodId=${encodeURIComponent(periodId)}`,
+        { signal },
+      ),
+    getExceptionTrendsReport: (periodIds: string[], signal?: AbortSignal) =>
+      request<ExceptionTrendPeriod[]>(
+        `/reports/exception-trends?periodIds=${encodeURIComponent(periodIds.join(','))}`,
+        { signal },
+      ),
+    getLeaveUtilizationReport: (year: number, signal?: AbortSignal) =>
+      request<LeaveUtilizationRow[]>(`/reports/leave-utilization?year=${year}`, { signal }),
   }
 }
 
