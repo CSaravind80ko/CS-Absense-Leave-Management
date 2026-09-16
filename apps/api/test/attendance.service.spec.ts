@@ -4,16 +4,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AttendanceService } from '../src/attendance/attendance.service';
+import { EmployeesService } from '../src/employees/employees.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const tenantId = 'de305d54-75b4-431b-adb2-eb6b9e546014';
 const periodId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
+const employeeId = '8d11d74a-e6b1-4a4c-9104-59538a65f28d';
+
+function employees(id = employeeId) {
+  return { getByCognitoSubject: jest.fn().mockResolvedValue({ id }) } as unknown as EmployeesService;
+}
 
 describe('AttendanceService', () => {
   it('rejects an inverted processing period before querying overlap', async () => {
     const count = jest.fn();
     const prisma = { processingPeriod: { count } } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.createPeriod(tenantId, 'actor', {
@@ -28,7 +34,7 @@ describe('AttendanceService', () => {
   it('scopes overlap checks to the tenant', async () => {
     const count = jest.fn().mockResolvedValue(1);
     const prisma = { processingPeriod: { count } } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.createPeriod(tenantId, 'actor', {
@@ -47,7 +53,7 @@ describe('AttendanceService', () => {
     const prisma = {
       processingPeriod: { findFirst },
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(service.getPeriod(tenantId, periodId)).rejects.toBeInstanceOf(
       NotFoundException,
@@ -72,7 +78,7 @@ describe('AttendanceService', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.updatePeriodStatus(tenantId, periodId, 'actor', {
@@ -93,7 +99,7 @@ describe('AttendanceService', () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.updatePeriodStatus(tenantId, periodId, 'actor', {
@@ -123,7 +129,7 @@ describe('AttendanceService', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.updatePeriodStatus(tenantId, periodId, 'actor', {
@@ -145,7 +151,7 @@ describe('AttendanceService', () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.reconcilePeriod(tenantId, periodId, 'actor', { version: 4 }),
@@ -164,7 +170,7 @@ describe('AttendanceService', () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.reconcilePeriod(tenantId, periodId, 'actor', { version: 5 }),
@@ -189,7 +195,7 @@ describe('AttendanceService', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.reconcilePeriod(tenantId, periodId, 'actor', { version: 5 }),
@@ -218,7 +224,7 @@ describe('AttendanceService', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await service.reconcilePeriod(tenantId, periodId, 'actor', {
       version: 6,
@@ -260,7 +266,7 @@ describe('AttendanceService', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     } as unknown as PrismaService;
-    const service = new AttendanceService(prisma);
+    const service = new AttendanceService(prisma, employees());
 
     await expect(
       service.updatePeriodStatus(tenantId, periodId, 'actor', {
@@ -304,7 +310,7 @@ describe('AttendanceService', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     } as unknown as PrismaService;
-    const result = await new AttendanceService(prisma).createImportJob(
+    const result = await new AttendanceService(prisma, employees()).createImportJob(
       tenantId,
       'actor',
       { periodId, source: 'MANUAL_FILE' },
@@ -325,5 +331,83 @@ describe('AttendanceService', () => {
         eventType: 'attendance.import.requested.v1',
       }),
     });
+  });
+});
+
+describe('AttendanceService.myAttendance', () => {
+  it('rejects a caller with no linked employee record', async () => {
+    const prisma = {} as unknown as PrismaService;
+    const unlinked = {
+      getByCognitoSubject: jest.fn().mockRejectedValue(new NotFoundException()),
+    } as unknown as EmployeesService;
+    const service = new AttendanceService(prisma, unlinked);
+
+    await expect(service.myAttendance(tenantId, 'actor', {})).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('throws when the tenant has no processing period yet and none was requested', async () => {
+    const prisma = {
+      processingPeriod: { findFirst: jest.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const service = new AttendanceService(prisma, employees());
+
+    await expect(service.myAttendance(tenantId, 'actor', {})).rejects.toThrow(
+      'No processing period exists yet',
+    );
+  });
+
+  it('falls back to the most recent period when none is requested, and aggregates status totals', async () => {
+    const prisma = {
+      processingPeriod: {
+        findFirst: jest.fn().mockResolvedValue({ id: periodId, tenantId, name: 'August' }),
+      },
+      $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
+      attendanceDay: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'd1', status: 'PRESENT', scheduledMinutes: 480, workedMinutes: 480 },
+          { id: 'd2', status: 'ABSENT', scheduledMinutes: 480, workedMinutes: 0 },
+          { id: 'd3', status: 'LEAVE', scheduledMinutes: 0, workedMinutes: 0 },
+          { id: 'd4', status: 'WEEKEND', scheduledMinutes: 0, workedMinutes: 0 },
+        ]),
+      },
+      attendanceException: { count: jest.fn().mockResolvedValue(2) },
+    } as unknown as PrismaService;
+    const service = new AttendanceService(prisma, employees());
+
+    const result = await service.myAttendance(tenantId, 'actor', {});
+
+    expect(prisma.processingPeriod.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId }, orderBy: { startsOn: 'desc' } }),
+    );
+    expect(result.totals).toEqual(
+      expect.objectContaining({
+        present: 1,
+        absent: 1,
+        leave: 1,
+        weekend: 1,
+        workedMinutes: 480,
+        scheduledMinutes: 960,
+      }),
+    );
+    expect(result.openExceptionCount).toBe(2);
+  });
+
+  it('scopes attendance days to the caller\'s own employee id and the requested period', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      processingPeriod: { findFirst: jest.fn().mockResolvedValue({ id: periodId, tenantId }) },
+      $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
+      attendanceDay: { findMany },
+      attendanceException: { count: jest.fn().mockResolvedValue(0) },
+    } as unknown as PrismaService;
+    const service = new AttendanceService(prisma, employees('emp-self'));
+
+    await service.myAttendance(tenantId, 'actor', { periodId });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId, employeeId: 'emp-self', periodId } }),
+    );
   });
 });

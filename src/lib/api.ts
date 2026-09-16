@@ -275,6 +275,35 @@ export interface AttendanceDayDetail extends AttendanceRegisterItem {
   }>
 }
 
+export interface MyAttendanceDay {
+  id: string
+  workDate: string
+  status: AttendanceStatus
+  scheduledMinutes: number
+  workedMinutes: number
+  overtimeMinutes: number
+  lateMinutes: number
+  firstPunchAt: string | null
+  lastPunchAt: string | null
+}
+
+export interface MyAttendanceSummary {
+  period: ProcessingPeriod
+  days: MyAttendanceDay[]
+  totals: {
+    present: number
+    absent: number
+    partial: number
+    leave: number
+    holiday: number
+    weekend: number
+    onDuty: number
+    workedMinutes: number
+    scheduledMinutes: number
+  }
+  openExceptionCount: number
+}
+
 export interface AttendanceException {
   id: string
   type: string
@@ -767,6 +796,11 @@ export function createApiClient({ getAccessToken, tenantId }: ApiClientOptions) 
     }),
     getAttendanceDashboard: (periodId: string, signal?: AbortSignal) =>
       request<AttendanceDashboard>(`/attendance/dashboard?periodId=${encodeURIComponent(periodId)}`, { signal }),
+    getMyAttendance: (periodId?: string, signal?: AbortSignal) =>
+      request<MyAttendanceSummary>(
+        `/attendance/my${periodId ? `?periodId=${encodeURIComponent(periodId)}` : ''}`,
+        { signal },
+      ),
     getAttendanceRegister: (
       periodId: string,
       input: { search?: string; status?: AttendanceStatus; page?: number } = {},

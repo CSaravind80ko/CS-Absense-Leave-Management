@@ -52,6 +52,12 @@ export class DashboardQueryDto {
   periodId!: string;
 }
 
+export class MyAttendanceQueryDto {
+  @IsOptional()
+  @IsUUID()
+  periodId?: string;
+}
+
 export class ImportQueryDto extends PageQueryDto {
   @IsOptional()
   @IsUUID()

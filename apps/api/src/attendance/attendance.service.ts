@@ -19,11 +19,13 @@ import {
   pageResult,
 } from '../common/dto/page-query.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmployeesService } from '../employees/employees.service';
 import { enqueueOutboxEvent } from '../events/outbox';
 import {
   AttendanceRegisterQueryDto,
   DashboardQueryDto,
   ImportQueryDto,
+  MyAttendanceQueryDto,
   PeriodQueryDto,
 } from './dto/attendance-query.dto';
 import { CreateImportJobDto } from './dto/create-import-job.dto';
@@ -52,7 +54,10 @@ const REOPEN_TRANSITIONS: Readonly<
 
 @Injectable()
 export class AttendanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly employees: EmployeesService,
+  ) {}
 
   async listPeriods(
     tenantId: string,
@@ -456,6 +461,75 @@ export class AttendanceService {
       imports,
       recentActivity,
     };
+  }
+
+  async myAttendance(
+    tenantId: string,
+    subject: string,
+    query: MyAttendanceQueryDto,
+  ) {
+    const employee = await this.employees.getByCognitoSubject(tenantId, subject);
+    const period = query.periodId
+      ? await this.ensurePeriod(tenantId, query.periodId)
+      : await this.prisma.processingPeriod.findFirst({
+          where: { tenantId },
+          orderBy: { startsOn: 'desc' },
+        });
+    if (!period) throw new NotFoundException('No processing period exists yet');
+
+    const [days, openExceptionCount] = await this.prisma.$transaction([
+      this.prisma.attendanceDay.findMany({
+        where: { tenantId, employeeId: employee.id, periodId: period.id },
+        orderBy: { workDate: 'asc' },
+        select: {
+          id: true,
+          workDate: true,
+          status: true,
+          scheduledMinutes: true,
+          workedMinutes: true,
+          overtimeMinutes: true,
+          lateMinutes: true,
+          firstPunchAt: true,
+          lastPunchAt: true,
+        },
+      }),
+      this.prisma.attendanceException.count({
+        where: {
+          tenantId,
+          employeeId: employee.id,
+          status: 'OPEN',
+          attendanceDay: { periodId: period.id },
+        },
+      }),
+    ]);
+
+    const totals = days.reduce(
+      (acc, day) => {
+        acc.workedMinutes += day.workedMinutes;
+        acc.scheduledMinutes += day.scheduledMinutes;
+        if (day.status === 'PRESENT') acc.present += 1;
+        else if (day.status === 'ABSENT') acc.absent += 1;
+        else if (day.status === 'PARTIAL') acc.partial += 1;
+        else if (day.status === 'LEAVE') acc.leave += 1;
+        else if (day.status === 'HOLIDAY') acc.holiday += 1;
+        else if (day.status === 'WEEKEND') acc.weekend += 1;
+        else if (day.status === 'ON_DUTY') acc.onDuty += 1;
+        return acc;
+      },
+      {
+        present: 0,
+        absent: 0,
+        partial: 0,
+        leave: 0,
+        holiday: 0,
+        weekend: 0,
+        onDuty: 0,
+        workedMinutes: 0,
+        scheduledMinutes: 0,
+      },
+    );
+
+    return { period, days, totals, openExceptionCount };
   }
 
   async listImportJobs(

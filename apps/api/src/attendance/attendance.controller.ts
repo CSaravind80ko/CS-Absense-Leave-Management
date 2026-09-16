@@ -17,6 +17,7 @@ import {
   AttendanceRegisterQueryDto,
   DashboardQueryDto,
   ImportQueryDto,
+  MyAttendanceQueryDto,
   PeriodQueryDto,
 } from './dto/attendance-query.dto';
 import { CreateImportJobDto } from './dto/create-import-job.dto';
@@ -87,6 +88,23 @@ export class AttendanceController {
     @Body() dto: ReconcilePeriodDto,
   ) {
     return this.attendance.reconcilePeriod(tenantId, id, subject, dto);
+  }
+
+  @Get('my')
+  @Roles(
+    ApplicationRole.TENANT_ADMIN,
+    ApplicationRole.HR_ADMIN,
+    ApplicationRole.PAYROLL_ADMIN,
+    ApplicationRole.MANAGER,
+    ApplicationRole.AUDITOR,
+    ApplicationRole.EMPLOYEE,
+  )
+  myAttendance(
+    @TenantId() tenantId: string,
+    @Subject() subject: string,
+    @Query() query: MyAttendanceQueryDto,
+  ) {
+    return this.attendance.myAttendance(tenantId, subject, query);
   }
 
   @Get('register')
