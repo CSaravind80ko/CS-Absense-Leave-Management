@@ -40,4 +40,9 @@ export class ReportsController {
   ) {
     return this.reports.leaveUtilization(tenantId, query.year);
   }
+
+  @Get('anomaly-patterns')
+  anomalyPatterns(@TenantId() tenantId: string) {
+    return this.reports.anomalyPatterns(tenantId);
+  }
 }

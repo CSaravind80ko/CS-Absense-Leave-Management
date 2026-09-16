@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, LoaderCircle, Sparkles } from 'lucide-react'
 import {
   ApiError,
+  type AnomalyPattern,
   type ApiClient,
   type AttendanceDepartmentSummary,
   type ExceptionTrendPeriod,
@@ -12,6 +13,8 @@ import {
 const label = (value: string) => value.replaceAll('_', ' ').toLowerCase()
 const errorMessage = (error: unknown) =>
   error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Something went wrong.'
+const formatDate = (value: string) =>
+  new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
 
 function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
   return <span className={`badge ${tone}`}>{children}</span>
@@ -43,10 +46,11 @@ export function ReportsView({ api }: { api: ApiClient }) {
   }
 
   return <>
-    <div className="page-top"><p>Cross-period analytics: department attendance, exception trends, and leave utilization.</p></div>
+    <div className="page-top"><p>Cross-period analytics: department attendance, exception trends, leave utilization, and recurring anomaly patterns.</p></div>
     <AttendanceSummarySection api={api} periods={periods}/>
     <ExceptionTrendsSection api={api} periods={periods}/>
     <LeaveUtilizationSection api={api}/>
+    <AnomalyPatternsSection api={api}/>
   </>
 }
 
@@ -114,5 +118,23 @@ function LeaveUtilizationSection({ api }: { api: ApiClient }) {
       <input type="number" aria-label="Year" value={year} min="2000" max="2100" onChange={event => setYear(Number(event.target.value) || year)}/>
     </div>
     {(loading || error || !rows?.length) ? state : <table><thead><tr><th>Leave type</th><th>Employees</th><th>Allocated</th><th>Used</th><th>Remaining</th></tr></thead><tbody>{rows.map(row => <tr key={row.leaveTypeId}><td><b>{row.name}</b>{row.isCompOff && <small className="subline">Comp-off</small>}{!row.paid && <small className="subline">Unpaid</small>}</td><td>{row.employeeCount}</td><td>{row.allocatedDays}</td><td>{row.usedDays}</td><td>{row.remainingDays}</td></tr>)}</tbody></table>}
+  </section>
+}
+
+function AnomalyPatternsSection({ api }: { api: ApiClient }) {
+  const [rows, setRows] = useState<AnomalyPattern[]>()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try { setRows(await api.getAnomalyPatternsReport()) } catch (caught) { setError(errorMessage(caught)) } finally { setLoading(false) }
+  }, [api])
+  useEffect(() => { void load() }, [load])
+
+  const state = <LoadState loading={loading} error={error} empty={!rows?.length} retry={() => void load()}/>
+  return <section className="panel table-panel">
+    <div className="panel-head"><div><h2>Recurring anomaly patterns</h2><p>Employees with repeated late arrivals, early departures, or location mismatches within a rolling window — not one-off incidents.</p></div></div>
+    {(loading || error || !rows?.length) ? state : <table><thead><tr><th>Employee</th><th>Department</th><th>Pattern</th><th>Occurrences</th><th>Window</th><th>Severity</th><th>Flagged</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td><b>{row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : 'Unknown employee'}</b>{row.employee && <small className="subline">{row.employee.employeeNumber}</small>}</td><td>{row.employee?.department?.name ?? '—'}</td><td>{label(row.patternType)}</td><td>{row.occurrenceCount}</td><td>{row.windowDays} days</td><td><Badge tone={row.severity === 'CRITICAL' ? 'red' : row.severity === 'HIGH' ? 'orange' : 'amber'}>{label(row.severity)}</Badge></td><td>{formatDate(row.createdAt)}</td></tr>)}</tbody></table>}
   </section>
 }

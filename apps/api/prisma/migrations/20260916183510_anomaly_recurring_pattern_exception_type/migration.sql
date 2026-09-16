@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ExceptionType" ADD VALUE 'RECURRING_PATTERN';

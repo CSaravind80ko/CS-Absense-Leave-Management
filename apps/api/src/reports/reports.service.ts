@@ -201,4 +201,37 @@ export class ReportsService {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
   }
+
+  async anomalyPatterns(tenantId: string) {
+    const exceptions = await this.prisma.attendanceException.findMany({
+      where: { tenantId, type: 'RECURRING_PATTERN', status: 'OPEN' },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeNumber: true,
+            firstName: true,
+            lastName: true,
+            department: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return exceptions.map((exception) => {
+      const details = exception.details as
+        | { patternType?: string; occurrenceCount?: number; windowDays?: number }
+        | null;
+      return {
+        id: exception.id,
+        employee: exception.employee,
+        patternType: details?.patternType ?? 'OTHER',
+        occurrenceCount: details?.occurrenceCount ?? 0,
+        windowDays: details?.windowDays ?? 0,
+        severity: exception.severity,
+        createdAt: exception.createdAt,
+      };
+    });
+  }
 }
